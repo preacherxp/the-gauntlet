@@ -134,6 +134,16 @@ export function audit() {
     }
     const share = covered / Math.max(1, bw * bh);
     if (share > 0.12) out.push(`the interface covers ${Math.round(share * 100)}% of the board`);
+    // Every square must be there to tap: at its centre, nothing but the board (or something that
+    // comes and goes: speech, a prompt, a toast, a tooltip) may be on top.
+    const passing = '#r-bubbles, #toasts, #r-prompt, #r-tip, #r-top nav.open';   // an open menu drops over the board on purpose
+    for (let i = 0; i < A.w * A.h; i++) {
+      const v = A.world(i).setY(0.03).project(cam);
+      const x = cr.left + (v.x + 1) / 2 * cr.width, y = cr.top + (1 - v.y) / 2 * cr.height;
+      if (x < 0 || y < 0 || x > W || y > H) { out.push(`square ${i % A.w},${Math.floor(i / A.w)} is off the screen`); continue; }
+      const top = document.elementFromPoint(x, y);
+      if (top && top !== window.aether.stage.canvas && !top.closest(passing)) out.push(`square ${i % A.w},${Math.floor(i / A.w)} is under ${label(top)}`);
+    }
   }
   return [...new Set(out)];
 }

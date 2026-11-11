@@ -30,6 +30,13 @@ class Sweep {
   constructor(page, info) { this.page = page; this.dir = path.join(SHOTS, info.project.name); this.problems = []; this.n = 0; }
   async check(name) {
     await this.page.waitForTimeout(300);
+    // in a fight, let the camera settle into the space the interface now leaves
+    await this.page.waitForFunction(() => {
+      const g = window.aether.gauntlet, st = window.aether.stage;
+      if (!g.battle) return true;
+      const i = g.inset(), w = st.insets;
+      return !g.needsRefit && !st.cameraBusy && Math.abs(i.bottom - w.bottom) <= 6 && Math.abs(i.top - w.top) <= 6 && Math.abs(i.right - w.right) <= 6;
+    }, null, { timeout: 15000 }).catch(() => {});   // if it never settles, the audit below says what is wrong
     for (const f of await this.page.evaluate(audit)) this.problems.push(`${name}: ${f}`);
     await this.page.screenshot({ path: path.join(this.dir, `${String(++this.n).padStart(2, '0')}_${name}.jpg`), type: 'jpeg', quality: 72 });
   }

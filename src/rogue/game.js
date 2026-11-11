@@ -422,8 +422,10 @@ export class Gauntlet {
     // foe's panel opened) and, if the free space moved, frame the board in it again.
     if (this.battle && (this.frames = (this.frames || 0) + 1) % 15 === 0) {
       const i = this.inset(), was = this.host.stage.insets;
-      if (Math.abs(i.right - was.right) > 6 || Math.abs(i.bottom - was.bottom) > 6 || Math.abs(i.top - was.top) > 6) { this.host.layout(); this.refit(); }
+      if (Math.abs(i.right - was.right) > 6 || Math.abs(i.bottom - was.bottom) > 6 || Math.abs(i.top - was.top) > 6) { this.host.layout(); this.needsRefit = true; }
     }
+    // A camera still flying in can't be reframed yet; keep asking until it lands.
+    if (this.needsRefit && this.battle && !this.host.stage.cameraBusy) { this.needsRefit = false; this.refit(); }
     if (!this.talk.length) return;
     const now = performance.now(), cam = this.host.stage.camera, rect = this.host.stage.canvas.getBoundingClientRect();
     const v = new THREE.Vector3();
