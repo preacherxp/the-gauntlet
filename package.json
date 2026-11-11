@@ -1,0 +1,18 @@
+{
+  "name": "the-gauntlet",
+  "version": "2.0.0",
+  "description": "A chess roguelite in three.js where every mesh, texture, card, portrait and sound is generated at runtime.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "test": "node tests/rogue.test.mjs && node tests/motion.test.mjs",
+    "shots": "node tools/shoot.mjs"
+  },
+  "dependencies": {
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "puppeteer-core": "25.17.0"
+  }
+}
