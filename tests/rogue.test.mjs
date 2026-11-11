@@ -154,8 +154,12 @@ const give = (b, ...ids) => { b.hand.push(...ids); b.aether = 9; };
   b.playerMove(sq(b, 1, 1), sq(b, 1, 2));
   check('War Drum: a second move on turn one', b.turn, YOU);
   b.playerMove(sq(b, 1, 2), sq(b, 1, 3));
+  b.hand = [];
   b.enemyTurn();
-  check('Battle Tome: three cards on later turns', b.hand.length, 6);
+  check('Battle Tome: two cards on later turns instead of one', b.hand.length, 2);
+  b.hand = ['insight', 'insight', 'insight', 'insight'];
+  b.draw(3, []);
+  check('the hand holds five cards at most', b.hand.length, 5);
 }
 {
   const b = board(['k..r', '....', '....', 'K..N'], { relics: ['phoenix'] });
@@ -303,7 +307,11 @@ const give = (b, ...ids) => { b.hand.push(...ids); b.aether = 9; };
   b.result = 'win';
   const before = run.s.gold;
   const out = run.finishBattle(b);
-  truthy('winning pays gold and offers three cards', out.won && run.s.gold > before && out.reward.cards.length === 3 && run.s.phase === 'reward');
+  truthy('winning a plain fight pays gold and offers two cards', out.won && run.s.gold > before && out.reward.cards.length === 2 && run.s.phase === 'reward');
+  const goldBeforeSkip = run.s.gold;
+  const skipRun = Run.load(run.save());
+  skipRun.takeCard(-1);
+  check('passing on the card pays gold instead', skipRun.s.gold - goldBeforeSkip, 15);
   check('a fallen piece is wounded', run.wounded().length, 1);
   run.takeCard(0);
   check('the chosen card joins the deck', run.s.deck.length, 9);

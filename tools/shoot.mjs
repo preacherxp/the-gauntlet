@@ -140,7 +140,7 @@ try {
     await tap(pawn.x, pawn.y + 1, false);
     await page.waitForFunction(() => { const G = window.aether.gauntlet; return G.phase === 'player' && G.battle.round === 2; }, { timeout: 20000 });
     s = await rstate();
-    expect(s.battle.round === 2 && s.battle.hand.length === 2, 'the enemy moved, and round two brings two cards');
+    expect(s.battle.round === 2 && s.battle.hand.length === 1, 'the enemy moved, and round two brings one card');
     await sleep(500);
     await shot('16_round_two');
     // end the fight with a win and take the reward
@@ -302,6 +302,91 @@ try {
     expect(sheets.move.length === 13 && sheets.attack.length === 13 && sheets.die.length === 13, 'every temper was filmed moving, attacking and dying');
     await g(() => { window.aether.tweens.speed = 1; window.aether.stage.cameraBusy = false; window.aether.stage.syncControls(); document.getElementById('title').hidden = false; window.aether.showTitle(); });
     await sleep(500);
+  }
+
+  if (want('mobile')) {
+    console.log('a phone, by touch');
+    const mp = await browser.newPage();
+    mp.on('pageerror', (e) => problems.push('phone page error: ' + e.message));
+    mp.on('console', (m) => { if (m.type() === 'error') problems.push('phone console: ' + m.text()); });
+    await mp.emulate({ viewport: { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true }, userAgent: '' });
+    await mp.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'load' });
+    await mp.waitForFunction(() => window.aether && window.aether.ready, { timeout: 60000 });
+    await mp.evaluate(() => { localStorage.removeItem('aether-chess.run.v1'); });
+    await sleep(1500);
+    const ms = (name) => mp.screenshot({ path: path.join(outDir, name + '.png') }).then(() => console.log('  saved', name + '.png'));
+    const mUntil = (phase) => mp.waitForFunction((p) => window.aether.gauntlet.phase === p && window.aether.tweens.items.length === 0, { timeout: 20000, polling: 80 }, phase);
+    const mCell = (x, y, high) => mp.evaluate((cx, cy, hi) => {
+      const { stage, gauntlet } = window.aether, A = gauntlet.arena, idx = cy * A.w + cx, pc = A.pieceAt(idx);
+      const v = A.world(idx).setY(pc && hi ? pc.height * 0.7 : 0.03).project(stage.camera), r = stage.canvas.getBoundingClientRect();
+      return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height };
+    }, x, y, high);
+    const mTap = async (x, y, high = true) => { const p = await mCell(x, y, high); await mp.touchscreen.tap(p.x, p.y); await sleep(150); };
+    await ms('70_phone_title');
+    await mp.tap('[data-act="title-new"]');
+    await sleep(500);
+    await mp.tap('#r-screen .choice:not(.locked)');
+    await sleep(600);
+    await mp.evaluate(() => { window.aether.gauntlet.run.s.roster.forEach((p) => { if (p.type !== 6) p.persona = 'lucky'; }); });
+    await ms('71_phone_map');
+    await mp.tap('#r-screen .chart .node.live');
+    await sleep(250);
+    await mp.tap('#r-screen .foot button.primary');
+    await mUntil('deploy');
+    await sleep(400);
+    await ms('72_phone_deploy');
+    await mp.tap('#r-piles button.primary');
+    await mUntil('player');
+    await sleep(800);
+    await ms('73_phone_battle');
+    await mp.evaluate(() => { const G = window.aether.gauntlet, b = G.battle; b.hand = ['aegis', 'frost', 'insight']; b.aether = 4; G.ui.handKey = null; G.refresh(); });
+    await mp.tap('#r-hand .card:nth-child(1)');
+    await sleep(250);
+    expect(await mp.$eval('#r-hand .card:nth-child(1)', (e) => e.classList.contains('peek')) && (await mp.evaluate(() => window.aether.gauntlet.phase)) === 'player',
+      'phone: the first tap on a card raises it to read, without playing it');
+    await ms('74_phone_card_peek');
+    await mp.tap('#r-hand .card:nth-child(1)');
+    await sleep(250);
+    expect((await mp.evaluate(() => window.aether.gauntlet.phase)) === 'casting', 'phone: the second tap plays it');
+    const pawn = await mp.evaluate(() => { const b = window.aether.gauntlet.battle; const i = b.cells.findIndex((p) => p && p.side === 0 && p.type === 1); return { x: i % b.w, y: Math.floor(i / b.w) }; });
+    await mTap(pawn.x, pawn.y);
+    await mUntil('player');
+    expect(await mp.evaluate((x, y) => { const b = window.aether.gauntlet.battle; return b.cells[y * b.w + x].shield; }, pawn.x, pawn.y), 'phone: tapping the target casts the card');
+    // press and hold an enemy piece to read it
+    const foe = await mp.evaluate(() => { const b = window.aether.gauntlet.battle; const i = b.cells.findIndex((p) => p && p.side === 1 && p.type === 6); return { x: i % b.w, y: Math.floor(i / b.w) }; });
+    const fp = await mCell(foe.x, foe.y, true);
+    await mp.touchscreen.touchStart(fp.x, fp.y);
+    await sleep(650);
+    const held = await mp.$eval('#r-tip', (e) => (e.hidden ? '' : e.textContent));
+    await ms('75_phone_hold');
+    await mp.touchscreen.touchEnd();
+    expect(held.includes('king'), `phone: pressing and holding a piece says what it is (${held.slice(0, 30)})`);
+    expect((await mp.evaluate(() => window.aether.gauntlet.battle.round)) === 1, 'phone: holding does not act');
+    // tap a pawn, tap the square ahead
+    await sleep(300);
+    await mTap(pawn.x, pawn.y);
+    expect((await mp.evaluate(() => window.aether.gauntlet.selected)) >= 0, 'phone: a tap selects a piece');
+    await mTap(pawn.x, pawn.y + 1, false);
+    await mp.waitForFunction(() => { const G = window.aether.gauntlet; return G.phase === 'player' && G.battle.round === 2; }, { timeout: 20000 });
+    expect(true, 'phone: a tap on a square moves there, and the enemy answers');
+    await sleep(600);
+    await ms('76_phone_round_two');
+    await mp.tap('#r-top .menu');
+    await sleep(200);
+    expect(await mp.$eval('#r-top nav', (e) => e.classList.contains('open')), 'phone: the menu button opens the menu');
+    await ms('77_phone_menu');
+    await mp.tap('#r-top nav button:nth-child(1)');
+    await sleep(400);
+    expect(await mp.$eval('#r-screen', (e) => !e.hidden), 'phone: the map opens from the menu');
+    await ms('78_phone_map_in_fight');
+    await mp.tap('#r-screen .foot button');
+    await sleep(300);
+    await mp.emulate({ viewport: { width: 844, height: 390, deviceScaleFactor: 2, isMobile: true, hasTouch: true, isLandscape: true }, userAgent: '' });
+    await sleep(900);
+    await ms('79_phone_sideways');
+    const fits = await mp.evaluate(() => { const r = document.getElementById('r-hand').getBoundingClientRect(); return r.bottom <= window.innerHeight + 2 && r.top > 120; });
+    expect(fits, 'phone sideways: the hand fits on screen below the board');
+    await mp.close();
   }
 
   if (want('misc')) {

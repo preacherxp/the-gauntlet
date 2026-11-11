@@ -8,7 +8,7 @@
 import { PAWN, QUEEN, KING, YOU, FOE, pieceMoves, allMoves, chooseMove, promotes, mvFrom, mvTo } from './rules.js';
 import { CARDS } from './cards.js';
 
-export const HAND_LIMIT = 6;
+export const HAND_LIMIT = 5;
 
 export const TRAITS = {
   reinforce: { name: 'Reinforcements', text: 'A new pawn arrives on its back row every third turn.' },
@@ -102,7 +102,8 @@ export class Battle {
     ev.push({ t: 'turn', side: YOU, round: this.round, wells });
     ev.push({ t: 'aether', value: this.aether });
     const loud = Math.min(2, this.ownIdx((p) => p.perk === 'loud').length);
-    const n = this.round === 1 ? 3 + (this.relics.has('banner') ? 1 : 0) + loud : 2 + (this.relics.has('tome') ? 1 : 0);
+    // Three to open, then one a turn: cards are meant to be scarce, chosen, and spent.
+    const n = this.round === 1 ? 3 + (this.relics.has('banner') ? 1 : 0) + loud : 1 + (this.relics.has('tome') ? 1 : 0);
     this.draw(n, ev);
     if (!this.canMove(YOU) && !this.playable()) { ev.push({ t: 'pass', side: YOU }); this.endPlayerTurn(ev); }
   }

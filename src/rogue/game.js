@@ -116,7 +116,25 @@ export class Gauntlet {
     this.ui.setIcons(this.host.icons());
     try { this.ui.personaIcons = personaIcons(this.host.stage, mats); } catch (err) { console.warn('persona portraits failed', err); }
   }
-  inset() { return this.ui.bottom.hidden ? 0 : Math.min(210, window.innerHeight * 0.26); }
+  // After a resize or a turn of the phone, pull the camera in or out to fit the board again.
+  refit() {
+    const stage = this.host.stage;
+    if (!this.battle || stage.cameraBusy) return;
+    const s = stage.spherical();
+    stage.flyTo({ theta: s.theta, phi: s.phi, radius: stage.fitDistance() }, 0.3);
+  }
+
+  // How much of the view the interface covers, so the board can be framed in what is left.
+  inset() {
+    if (this.ui.bottom.hidden) return { bottom: 0, top: 0 };
+    const H = window.innerHeight;
+    const bottom = Math.min(H * 0.45, Math.max(0, H - this.ui.handBox.getBoundingClientRect().top + 6));
+    const foe = this.ui.foeBox.hidden ? 0 : this.ui.foeBox.getBoundingClientRect().bottom;
+    // A tall phone stacks the foe's panel above the board; a wide screen keeps it to one side.
+    const tall = window.innerHeight > window.innerWidth;
+    const top = this.ui.compact && tall ? Math.min(H * 0.22, foe + 4) : 0;
+    return { bottom: tall ? bottom : Math.min(bottom, H * 0.34), top };
+  }
 
   // Show whatever the run's phase calls for.
   enter() {
@@ -309,7 +327,7 @@ export class Gauntlet {
     this.ui.battle({
       foe: { name: setup.name, kind: setup.kind, traits: setup.traits },
       turnText: this.phase === 'deploy' ? 'Before the battle' : b.result ? (b.result === 'win' ? 'Victory' : 'Defeat') : mine ? `Your turn · round ${b.round}` : 'Enemy turn',
-      prompt, aether: b.aether, aetherMax: b.maxAether,
+      prompt, minorPrompt: this.phase === 'player' && b.canMove(YOU) || this.phase === 'enemy', aether: b.aether, aetherMax: b.maxAether,
       hand: b.hand.map((id, i) => ({ id, playable: live && b.canPlay(i), active: !!this.casting && this.casting.i === i })),
       deck: b.deck.length, discard: b.discard.length, buttons,
     });
@@ -438,15 +456,35 @@ export class Gauntlet {
     return false;
   }
 
+  // On a touch screen: a tap acts, and pressing and holding a piece shows what
+  // it is without doing anything. Dragging anywhere else turns the camera.
   pointerDown(e) {
+    this.ui.setPeek(-1);
+    this.ui.nav.classList.remove('open');
+    clearTimeout(this.tipTimer);
+    if (e.pointerType === 'touch') this.ui.hideTip();
     if (e.button !== 0 || !this.battle || this.ui.screenOpen) { this.down = null; return; }
-    const idx = this.resolve(this.arena.pick(this.host.stage.ndc(e), this.host.stage.camera));
-    this.down = { x: e.clientX, y: e.clientY, idx };
+    const hit = this.arena.pick(this.host.stage.ndc(e), this.host.stage.camera);
+    const idx = this.resolve(hit);
+    const touch = e.pointerType === 'touch';
+    this.down = { x: e.clientX, y: e.clientY, idx, touch, held: false };
     if (this.usable(idx)) this.host.stage.lockInput(true);
+    if (touch) {
+      const at = hit.pieceIdx >= 0 ? hit.pieceIdx : hit.planeIdx, d = this.down;
+      this.holdTimer = setTimeout(() => {
+        if (this.down !== d || at < 0) return;
+        const lines = this.describe(at);
+        if (!lines) return;
+        d.held = true;
+        this.host.audio.play('select');
+        this.ui.tip(lines, d.x - 60, d.y - 30);
+      }, 420);
+    }
   }
 
   pointerMove(e) {
-    if (!this.battle || this.ui.screenOpen || e.buttons || e.pointerType === 'touch') { this.ui.hideTip(); return; }
+    if (this.down && this.down.touch && Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y) > 12) clearTimeout(this.holdTimer);
+    if (!this.battle || this.ui.screenOpen || e.buttons || e.pointerType === 'touch') { if (e.pointerType !== 'touch') this.ui.hideTip(); return; }
     const hit = this.arena.pick(this.host.stage.ndc(e), this.host.stage.camera);
     const idx = this.resolve(hit);
     const hover = this.usable(idx) ? idx : -1;
@@ -459,10 +497,23 @@ export class Gauntlet {
 
   pointerUp(e, cancelled) {
     this.host.stage.lockInput(false);
+    clearTimeout(this.holdTimer);
     const d = this.down;
     this.down = null;
-    if (!d || cancelled || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 7 || this.ui.screenOpen) return;
+    if (!d) return;
+    if (d.held) { this.tipTimer = setTimeout(() => this.ui.hideTip(), 2600); return; }   // it was a look, not a move
+    if (cancelled || Math.hypot(e.clientX - d.x, e.clientY - d.y) > (d.touch ? 14 : 7) || this.ui.screenOpen) return;
+    const before = this.phase;
     this.click(d.idx);
+    // A tap on a touch screen also says briefly what was tapped, since there is no hovering.
+    if (d.touch && d.idx >= 0 && before !== 'casting') {
+      const p = this.battle && this.battle.cells[d.idx];
+      const lines = p ? this.describe(d.idx) : null;
+      if (lines) {
+        this.ui.tip(lines, d.x - 60, d.y - 40);
+        this.tipTimer = setTimeout(() => this.ui.hideTip(), 2200);
+      }
+    }
   }
 
   key(e) {

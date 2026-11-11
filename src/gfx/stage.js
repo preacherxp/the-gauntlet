@@ -8,6 +8,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ease } from './tween.js';
 import { YOU as WHITE, KNIGHT } from '../rogue/rules.js';
+import { pixelate } from './pixelui.js';
 
 export const QUALITY = {
   low: { label: 'Low', pixelRatio: 1, bloom: false, shadows: 0, msaa: 0 },
@@ -30,7 +31,7 @@ export class Stage {
     this.camera = new THREE.PerspectiveCamera(36, 1, 0.1, 2000);
     this.camera.position.set(0, 12, 14);
     this.camera.lookAt(TARGET);
-    this.insets = { right: 0, bottom: 0 };
+    this.insets = { right: 0, bottom: 0, top: 0 };
     this.width = 1; this.height = 1;
     this.quality = QUALITY.high;
     this.composer = null;
@@ -87,7 +88,7 @@ export class Stage {
 
   // `right` and `bottom`: pixels of the view covered by the interface, so the
   // board is centred in what is left.
-  setInsets(right, bottom) { this.insets = { right, bottom }; this.resize(); }
+  setInsets(right, bottom, top = 0) { this.insets = { right, bottom, top }; this.resize(); }
 
   resize() {
     const w = this.canvas.clientWidth || window.innerWidth, h = this.canvas.clientHeight || window.innerHeight;
@@ -98,13 +99,13 @@ export class Stage {
       this.composer.setSize(w, h);
     }
     this.camera.aspect = w / h;
-    this.camera.setViewOffset(w, h, this.insets.right / 2, this.insets.bottom / 2, w, h);
+    this.camera.setViewOffset(w, h, this.insets.right / 2, (this.insets.bottom - this.insets.top) / 2, w, h);
     this.camera.updateProjectionMatrix();
   }
 
   // Distance at which the whole board fits the free part of the view.
   fitDistance() {
-    const w = Math.max(200, this.width - this.insets.right), h = Math.max(200, this.height - this.insets.bottom);
+    const w = Math.max(200, this.width - this.insets.right), h = Math.max(160, this.height - this.insets.bottom - this.insets.top);
     const tan = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
     const k = (this.span || 8) / 8;        // boards smaller than 8 squares let the camera come closer
     const byHeight = 5.3 * k / (tan * (h / this.height));
@@ -195,7 +196,8 @@ export class Stage {
       const img = ctx.createImageData(size, size);
       for (let y = 0; y < size; y++) img.data.set(pixels.subarray((size - 1 - y) * size * 4, (size - y) * size * 4), y * size * 4);
       ctx.putImageData(img, 0, 0);
-      out[code] = canvas.toDataURL('image/png');
+      // a pixel-art sprite to match the interface: 32 by 32, hard edges
+      out[code] = pixelate(canvas, 32, 32, { levels: 10, dither: false }).toDataURL('image/png');
       canvases[code] = canvas;
       scene.remove(p.group);
     }

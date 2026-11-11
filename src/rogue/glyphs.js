@@ -3,6 +3,7 @@
 // background in the colour of the card's kind.
 
 import { makeNoise } from '../gfx/noise.js';
+import { pixelate } from '../gfx/pixelui.js';
 
 export const KIND_COLOR = {
   move: '#1f9a8a', guard: '#3f72c8', control: '#5aa8d0', attack: '#c8443e', utility: '#7e58c8', summon: '#3f9a54', relic: '#c8963a',
@@ -68,8 +69,8 @@ export function cardArt(card) {
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
-  drawGlyph(ctx, card.glyph, w / 2 - 55, h / 2 - 55, 110, '#ffffff', 5.5);
-  const url = c.toDataURL('image/png');
+  drawGlyph(ctx, card.glyph, w / 2 - 55, h / 2 - 55, 110, '#ffffff', 8);
+  const url = pixelate(c, 84, 48, { levels: 5 }).toDataURL('image/png');
   cache.set(key, url);
   return url;
 }
@@ -85,8 +86,8 @@ export function badge(glyph, color = KIND_COLOR.relic) {
   grad.addColorStop(0, shade(color, 0.9)); grad.addColorStop(1, shade(color, 0.25));
   ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(36, 36, 34, 0, P * 2); ctx.fill();
   ctx.lineWidth = 2.5; ctx.strokeStyle = color; ctx.stroke();
-  drawGlyph(ctx, glyph, 14, 14, 44, '#fff', 8);
-  const url = c.toDataURL('image/png');
+  drawGlyph(ctx, glyph, 14, 14, 44, '#fff', 10);
+  const url = pixelate(c, 18, 18, { levels: 5 }).toDataURL('image/png');
   cache.set(key, url);
   return url;
 }
@@ -123,7 +124,7 @@ export function mapTexture(w = 640, h = 720) {
   ctx.lineWidth = 1;
   for (let x = 0; x < w; x += 40) { ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); ctx.stroke(); }
   for (let y = 0; y < h; y += 40) { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); ctx.stroke(); }
-  const url = c.toDataURL('image/jpeg', 0.9);
+  const url = pixelate(c, Math.round(w / 4), Math.round(h / 4), { levels: 12, dither: false }).toDataURL('image/png');
   cache.set(key, url);
   return url;
 }

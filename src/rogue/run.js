@@ -10,6 +10,7 @@ import {
 } from './content.js';
 
 export const START_CROWNS = 3;
+export const SKIP_GOLD = 15;
 
 export class Run {
   constructor(state) { this.s = state; }
@@ -278,7 +279,8 @@ export class Run {
     s.gold += gold;
     const reward = {
       gold, loot: battle.loot || 0, flawless: !down, wounded: fallen.map((id) => byId(id).name), notes,
-      cards: this.cardChoices(3, kind === 'battle' ? 1 : 3), relic: null, recruits: null, cardTaken: false, recruitTaken: false,
+      // Plain fights offer two cards, harder ones three; passing pays, so a lean deck is a real choice.
+      cards: this.cardChoices(kind === 'battle' ? 2 : 3, kind === 'battle' ? 1 : 3), skipGold: SKIP_GOLD, relic: null, recruits: null, cardTaken: false, recruitTaken: false,
     };
     if (kind !== 'battle' && this.freeRelics().length) reward.relic = this.grantRelic();
     if (kind === 'boss') {
@@ -296,6 +298,7 @@ export class Run {
     if (!r || r.cardTaken) return;
     r.cardTaken = true;
     if (i >= 0 && r.cards[i]) this.s.deck.push(r.cards[i]);
+    else { this.s.gold += r.skipGold || 0; r.skipped = true; }
   }
 
   takeRecruit(i) {
@@ -314,7 +317,7 @@ export class Run {
     for (let i = 0; i < 6 && b === a; i++) b = this.pickOne(pool);
     const relics = this.freeRelics();
     return {
-      cards: this.cardChoices(4, 1.5).map((id) => ({ id, price: CARD_PRICE[CARDS[id].rarity], sold: false })),
+      cards: this.cardChoices(3, 1.5).map((id) => ({ id, price: CARD_PRICE[CARDS[id].rarity], sold: false })),
       pieces: [a, b].map((type) => ({ ...this.candidate(type), price: PIECE_PRICE[type], sold: false })),
       relic: relics.length ? { id: this.pickOne(relics), price: RELIC_PRICE, sold: false } : null,
       removed: false,

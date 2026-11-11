@@ -11,7 +11,7 @@ const free = (p) => !(p.frozen > 0);
 export const CARDS = {
   quickstep: {
     name: 'Quickstep', cost: 1, rarity: 'common', kind: 'move', glyph: 'step',
-    text: 'One of your pieces steps to an adjacent empty square. Does not use your move.',
+    text: 'Step one of yours to an empty square next to it. Keeps your move.',
     steps: [
       (b) => b.ownIdx((p, i) => free(p) && b.neighbors(i).some((n) => b.isEmpty(n) && b.pawnMayStand(p, n))),
       (b, [from]) => b.neighbors(from).filter((n) => b.isEmpty(n) && b.pawnMayStand(b.cells[from], n)),
@@ -20,13 +20,13 @@ export const CARDS = {
   },
   aegis: {
     name: 'Aegis', cost: 1, rarity: 'common', kind: 'guard', glyph: 'shield',
-    text: 'Shield one of your pieces. The next capture against it fails.',
+    text: 'Shield one of yours. The next capture on it fails.',
     steps: [(b) => b.ownIdx((p) => !p.shield)],
     play: (b, [at], ev) => b.setShield(at, true, ev),
   },
   frost: {
     name: 'Frost', cost: 1, rarity: 'common', kind: 'control', glyph: 'snow',
-    text: 'Freeze an enemy piece that is not a king. It cannot move on its next turn.',
+    text: 'Freeze an enemy that is not a king. It skips a turn.',
     steps: [(b) => b.foeIdx((p) => p.type !== KING && !(p.frozen > 0))],
     play: (b, [at], ev) => b.freeze(at, 1, ev),
   },
@@ -44,7 +44,7 @@ export const CARDS = {
   },
   conscript: {
     name: 'Conscript', cost: 1, rarity: 'common', kind: 'summon', glyph: 'pawn',
-    text: 'Summon a pawn on an empty square in your two home rows. It leaves after the battle.',
+    text: 'Summon a pawn in your home rows for this fight.',
     steps: [(b) => b.emptyIdx((i) => b.y(i) < 2)],
     play: (b, [at], ev) => b.summon(PAWN, YOU, at, ev),
   },
@@ -59,13 +59,13 @@ export const CARDS = {
   },
   barricade: {
     name: 'Barricade', cost: 1, rarity: 'common', kind: 'guard', glyph: 'wall',
-    text: 'Raise a rock on an empty square. It crumbles after 3 rounds.',
+    text: 'Raise a rock on an empty square for 3 rounds.',
     steps: [(b) => b.emptyIdx(() => true)],
     play: (b, [at], ev) => b.raiseRock(at, 3, ev),
   },
   recall: {
     name: 'Recall', cost: 0, rarity: 'common', kind: 'move', glyph: 'home',
-    text: 'Return one of your pieces to an empty square on your home row. Draw a card.',
+    text: 'Send one of yours to your home row. Draw a card.',
     steps: [
       (b) => (b.emptyIdx((i) => b.y(i) === 0).length ? b.ownIdx((p, i) => free(p) && b.y(i) > 0) : []),
       (b) => b.emptyIdx((i) => b.y(i) === 0),
@@ -74,7 +74,7 @@ export const CARDS = {
   },
   leap: {
     name: "Knight's Leap", cost: 1, rarity: 'uncommon', kind: 'attack', glyph: 'leap',
-    text: 'One of your pieces makes a knight\'s jump, capturing if it lands on an enemy. Does not use your move.',
+    text: 'One of yours leaps like a knight and may capture. Keeps your move.',
     steps: [
       (b) => b.ownIdx((p, i) => free(p) && leapSquares(b, i).length > 0),
       (b, [from]) => leapSquares(b, from),
@@ -83,19 +83,19 @@ export const CARDS = {
   },
   doubletime: {
     name: 'Double Time', cost: 2, rarity: 'uncommon', kind: 'move', glyph: 'clock',
-    text: 'After your move this turn, move again.',
+    text: 'Move twice this turn.',
     steps: [],
     play: (b, _, ev) => { b.extraMoves++; ev.push({ t: 'again', pending: true }); },
   },
   royalhour: {
     name: "Queen's Hour", cost: 2, rarity: 'uncommon', kind: 'move', glyph: 'crown',
-    text: 'One of your pieces moves like a queen until your turn ends.',
+    text: 'One of yours moves like a queen this turn.',
     steps: [(b) => b.ownIdx((p) => free(p) && p.type !== QUEEN && !p.queen)],
     play: (b, [at], ev) => b.setQueen(at, true, ev),
   },
   blink: {
     name: 'Blink', cost: 2, rarity: 'uncommon', kind: 'move', glyph: 'portal',
-    text: 'Move one of your pieces to any empty square. Pawns cannot land on the far row.',
+    text: 'Move one of yours to any empty square.',
     steps: [
       (b) => b.ownIdx((p) => free(p)),
       (b, [from]) => b.emptyIdx((i) => b.pawnMayStand(b.cells[from], i)),
@@ -104,7 +104,7 @@ export const CARDS = {
   },
   rally: {
     name: 'Rally', cost: 1, rarity: 'uncommon', kind: 'move', glyph: 'flag',
-    text: 'Every pawn of yours advances one square if the way is clear.',
+    text: 'Every pawn of yours steps forward if it can.',
     steps: [],
     can: (b) => b.ownIdx((p, i) => p.type === PAWN && free(p) && b.isEmpty(i + b.w)).length > 0,
     play: (b, _, ev) => {
@@ -115,13 +115,13 @@ export const CARDS = {
   },
   bloodprice: {
     name: 'Blood Price', cost: 0, rarity: 'uncommon', kind: 'utility', glyph: 'drop',
-    text: 'Destroy one of your pawns. Gain 2 aether and draw 2 cards.',
+    text: 'Destroy a pawn of yours. Gain 2 aether, draw 2.',
     steps: [(b) => b.ownIdx((p) => p.type === PAWN)],
     play: (b, [at], ev) => { b.remove(at, ev, true); b.gain(2, ev); b.draw(2, ev); },
   },
   deepfreeze: {
     name: 'Deep Freeze', cost: 2, rarity: 'uncommon', kind: 'control', glyph: 'snow',
-    text: 'Freeze every enemy pawn for its next turn.',
+    text: 'Freeze every enemy pawn for a turn.',
     steps: [],
     can: (b) => b.foeIdx((p) => p.type === PAWN).length > 0,
     play: (b, _, ev) => { for (const i of b.foeIdx((p) => p.type === PAWN)) b.freeze(i, 1, ev); },
@@ -135,31 +135,31 @@ export const CARDS = {
   },
   knighting: {
     name: 'Knighting', cost: 2, rarity: 'uncommon', kind: 'summon', glyph: 'star', exhaust: true,
-    text: 'One of your pawns becomes a knight for this battle. Once per battle.',
+    text: 'A pawn of yours becomes a knight this fight. Once.',
     steps: [(b) => b.ownIdx((p) => p.type === PAWN)],
     play: (b, [at], ev) => b.morph(at, KNIGHT, ev),
   },
   surge: {
     name: 'Aether Surge', cost: 0, rarity: 'uncommon', kind: 'utility', glyph: 'spark', exhaust: true,
-    text: 'Gain 2 aether. Once per battle.',
+    text: 'Gain 2 aether. Once per fight.',
     steps: [],
     play: (b, _, ev) => b.gain(2, ev),
   },
   turncoat: {
     name: 'Turncoat', cost: 3, rarity: 'rare', kind: 'control', glyph: 'turn', exhaust: true,
-    text: 'An enemy pawn joins your side for this battle. Once per battle.',
+    text: 'An enemy pawn joins you for this fight. Once.',
     steps: [(b) => b.foeIdx((p, i) => p.type === PAWN && b.y(i) < b.h - 1)],
     play: (b, [at], ev) => b.convert(at, ev),
   },
   meteor: {
     name: 'Meteor', cost: 3, rarity: 'rare', kind: 'attack', glyph: 'meteor', exhaust: true,
-    text: 'Destroy an enemy piece that is not a king. A shield absorbs it. Once per battle.',
+    text: 'Destroy any enemy but the king. Shields absorb it. Once.',
     steps: [(b) => b.foeIdx((p) => p.type !== KING)],
     play: (b, [at], ev) => b.smite(at, ev),
   },
   bastion: {
     name: 'Royal Bastion', cost: 1, rarity: 'rare', kind: 'guard', glyph: 'crown',
-    text: 'Shield your king and draw a card.',
+    text: 'Shield your king. Draw a card.',
     steps: [],
     play: (b, _, ev) => { const k = b.ownIdx((p) => p.type === KING)[0]; if (k !== undefined && !b.cells[k].shield) b.setShield(k, true, ev); b.draw(1, ev); },
   },

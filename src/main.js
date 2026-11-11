@@ -13,7 +13,8 @@ import { AudioEngine } from './audio.js';
 import { Shell } from './ui.js';
 import { Gauntlet } from './rogue/game.js';
 import { PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING } from './rogue/rules.js';
-import { grainTexture } from './rogue/glyphs.js';
+import { installPixelKit } from './gfx/pixelui.js';
+import { loadPixelFont } from './gfx/pixelfont.js';
 
 const SETTINGS_KEY = 'aether-chess.settings.v2';
 const DEFAULTS = { quality: 'high', animSpeed: 1, sfx: 0.8, music: 0.45, muted: false, shake: true, particles: true };
@@ -65,8 +66,9 @@ function applySettings(changed) {
 
 function layout() {
   // On the title the card sits on the left, so the board moves right.
-  if (shell.titleShown && window.innerWidth > 900) stage.setInsets(-Math.min(640, window.innerWidth * 0.42), 0);
-  else stage.setInsets(0, gauntlet ? gauntlet.inset() : 0);
+  if (shell.titleShown && window.innerWidth > 900) stage.setInsets(-Math.min(660, window.innerWidth * 0.44), 0);
+  else if (shell.titleShown) stage.setInsets(0, Math.min(window.innerHeight * 0.5, 330));
+  else { const i = gauntlet ? gauntlet.inset() : { bottom: 0, top: 0 }; stage.setInsets(0, i.bottom, i.top); }
   env.resize(stage.height, stage.renderer.getPixelRatio());
   fx.resize(stage.height, stage.renderer.getPixelRatio());
 }
@@ -102,7 +104,7 @@ function bindInput(canvas) {
     if (e.key.toLowerCase() === 'm') { toggleMute(); return; }
     if (!shell.titleShown && gauntlet.key(e)) e.preventDefault();
   });
-  window.addEventListener('resize', layout);
+  window.addEventListener('resize', () => { layout(); gauntlet.refit(); });
   shell.on('click', () => { audio.init(); audio.play('click'); })
     .on('title-new', () => startRun(() => gauntlet.open()))
     .on('title-run', () => startRun(() => gauntlet.resume()))
@@ -125,7 +127,8 @@ function loop(last) {
 
 async function boot() {
   await frame();
-  document.getElementById('shade').style.setProperty('--grain', `url(${grainTexture()})`);
+  installPixelKit();
+  try { await loadPixelFont(); } catch (err) { console.warn('pixel font failed, using a fallback', err); }
   textures = new TextureLibrary();
   const canvas = document.getElementById('scene');
   stage = new Stage(canvas, tweens);

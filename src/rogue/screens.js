@@ -41,12 +41,14 @@ export class RogueUI {
         h('div', { class: 'brand' }, h('span', { class: 'mark' }), h('span', { text: 'THE GAUNTLET' })),
         (this.runBox = h('div', { id: 'r-run' })),
         (this.relicBox = h('div', { id: 'r-relics' })),
-        h('nav', {},
+        // On a phone the buttons fold away behind one Menu button.
+        (this.menuBtn = h('button', { class: 'menu', text: 'Menu', on: () => this.nav.classList.toggle('open') })),
+        (this.nav = h('nav', {},
           (this.mapBtn = h('button', { text: 'Map', on: () => on.map() })),
           h('button', { text: 'Army', on: () => on.army() }), h('button', { text: 'Deck', on: () => on.deck() }),
           h('button', { text: 'Settings', on: () => on.settings() }), (this.muteBtn = h('button', { text: 'Sound on', on: () => on.mute() })),
-          h('button', { text: 'Leave', title: 'Back to the title. The run is kept', on: () => on.leave() }))),
-      (this.foeBox = h('aside', { id: 'r-foe', hidden: true })),
+          h('button', { text: 'Leave', title: 'Back to the title. The run is kept', on: () => on.leave() })))),
+      (this.foeBox = h('aside', { id: 'r-foe', hidden: true, on: () => this.foeBox.classList.toggle('open') })),
       (this.promptBox = h('div', { id: 'r-prompt', hidden: true })),
       (this.bottom = h('footer', { id: 'r-bottom', hidden: true },
         (this.aetherBox = h('div', { id: 'r-aether' })),
@@ -56,7 +58,11 @@ export class RogueUI {
       (this.tipBox = h('div', { id: 'r-tip', hidden: true })),
       (this.screenBox = h('div', { id: 'r-screen', hidden: true })),
     );
+    this.nav.addEventListener('click', (e) => { if (e.target.closest('button')) this.nav.classList.remove('open'); });
   }
+
+  // Small screens show small cards: a tap raises one to read, a second tap plays it.
+  get compact() { return window.matchMedia('(max-width: 820px), (max-height: 600px)').matches; }
 
   setIcons(icons) { this.icons = icons; }
   setMuted(m) { this.muteBtn.textContent = m ? 'Sound off' : 'Sound on'; }
@@ -90,17 +96,20 @@ export class RogueUI {
     );
     this.promptBox.hidden = !view.prompt;
     this.promptBox.textContent = view.prompt || '';
+    this.promptBox.classList.toggle('minor', !!view.minorPrompt);   // a reminder, not an instruction: phones leave it out
     const orbs = [];
     for (let i = 0; i < Math.max(view.aether, view.aetherMax); i++) orbs.push(h('i', { class: i < view.aether ? 'on' : '' }));
     this.aetherBox.replaceChildren(h('div', { class: 'orbs' }, orbs), h('div', { class: 'lbl', text: `${view.aether} aether` }));
     const key = view.hand.map((c) => c.id).join(',');
     if (key !== this.handKey) {
       this.handKey = key;
-      this.handBox.replaceChildren(...view.hand.map((c, i) => this.card(c.id, { 'data-i': String(i), on: () => this.on.card(i) })));
+      this.peek = -1;
+      this.handBox.replaceChildren(...view.hand.map((c, i) => this.card(c.id, { 'data-i': String(i), on: (e) => this.cardTapped(i, e) })));
     }
     [...this.handBox.children].forEach((node, i) => {
       node.classList.toggle('off', !view.hand[i].playable);
       node.classList.toggle('active', !!view.hand[i].active);
+      node.classList.toggle('peek', i === this.peek);
     });
     this.pileBox.replaceChildren(
       h('div', { class: 'counts' }, h('span', { title: 'Cards left to draw', text: `Draw ${view.deck}` }), h('span', { title: 'Cards played. They come back when the draw pile runs out', text: `Used ${view.discard}` })),
@@ -108,11 +117,22 @@ export class RogueUI {
     );
   }
 
+  cardTapped(i, e) {
+    e.stopPropagation();
+    if (this.compact && this.peek !== i) { this.setPeek(i); this.on.peek && this.on.peek(i); return; }
+    this.setPeek(-1);
+    this.on.card(i);
+  }
+  setPeek(i) {
+    this.peek = i;
+    [...this.handBox.children].forEach((node, j) => node.classList.toggle('peek', j === i));
+  }
+
   hideBattle() { this.bottom.hidden = true; this.foeBox.hidden = true; this.promptBox.hidden = true; this.handKey = null; this.bubbles.replaceChildren(); this.hideTip(); }
 
   card(id, props = {}, price = null) {
     const c = CARDS[id];
-    return h('div', { class: `card ${c.rarity}`, style: `--kind:${KIND_COLOR[c.kind]}`, ...props },
+    return h('div', { class: `card k-${c.kind} ${c.rarity}`, ...props },
       h('span', { class: 'cost', text: String(c.cost) }),
       h('img', { class: 'art', src: cardArt(c), alt: '' }),
       h('div', { class: 'nm', text: c.name }),
@@ -228,6 +248,7 @@ export class RogueUI {
         !live && visited.get(r) !== i && (r < st.step || (here && r <= here.step)) ? 'past' : ''].join(' ');
       const size = n.kind === 'boss' ? 30 : 21;
       const g = s('g', { class: cls, transform: `translate(${x} ${y})`, 'data-step': r, 'data-i': i },
+        s('rect', { class: 'hit', x: -size - 12, y: -size - 12, width: (size + 12) * 2, height: (size + 12) * 2 }),   // a bigger target for fingers
         live ? s('rect', { class: 'halo', x: -size - 7, y: -size - 7, width: (size + 7) * 2, height: (size + 7) * 2, transform: 'rotate(45)' }) : null,
         s('rect', { class: 'disc', x: -size, y: -size, width: size * 2, height: size * 2, transform: 'rotate(45)' }),
         s('path', { class: 'glyph', d: MAP_GLYPH[n.kind], transform: `translate(${-size * 0.62} ${-size * 0.62}) scale(${size * 0.0124})` }));
@@ -244,9 +265,9 @@ export class RogueUI {
     }));
     // You are here: the king's portrait over your last node, or at the start.
     const at = here ? pos(here.step, here.i) : start;
-    const king = s('image', { href: this.icons[6] || '', x: at[0] - 22, y: at[1] - 74, width: 44, height: 44, class: 'you' });
+    const king = s('image', { href: this.icons[6] || '', x: at[0] - 24, y: at[1] - 78, width: 48, height: 48, class: 'you', style: 'image-rendering:pixelated' });
     const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart' },
-      s('image', { href: mapTexture(W, H), x: 0, y: 0, width: W, height: H, preserveAspectRatio: 'none' }),
+      s('image', { href: mapTexture(W, H), x: 0, y: 0, width: W, height: H, preserveAspectRatio: 'none', style: 'image-rendering:pixelated' }),
       s('g', { class: 'start', transform: `translate(${start[0]} ${start[1]})` },
         s('path', { class: 'glyph', d: MAP_GLYPH.start, transform: 'translate(-12 -12) scale(0.24)' })),
       ...lines, ...nodes, king,
@@ -294,7 +315,7 @@ export class RogueUI {
       if (!r.cardTaken) body.push(h('div', { class: 'cards' }, r.cards.map((id, i) => this.card(id, { on: () => { card(i); draw(); } }))));
       const waiting = !r.cardTaken || (r.recruits && !r.recruitTaken);
       this.screen('', 'Victory', null, body, [
-        !r.cardTaken && h('button', { text: 'Take no card', on: () => { card(-1); draw(); } }),
+        !r.cardTaken && h('button', { text: r.skipGold ? `Skip, take ${r.skipGold} gold` : 'Take no card', on: () => { card(-1); draw(); } }),
         h('button', { class: 'primary', text: 'Onward', disabled: waiting, on: done }),
       ]);
     };
@@ -306,7 +327,7 @@ export class RogueUI {
       const s = run.s, shop = s.shop, hurt = run.wounded().length;
       this.screen('wide', 'The merchant', `You have ${s.gold} gold.`, [
         h('h3', { text: 'Cards' }),
-        h('div', { class: 'cards' }, shop.cards.map((c, i) => this.card(c.id, { class: `card ${CARDS[c.id].rarity}` + (c.sold ? ' sold' : s.gold < c.price ? ' off' : ''), on: () => { if (buy('card', i)) draw(); } }, c.sold ? 'sold' : c.price))),
+        h('div', { class: 'cards' }, shop.cards.map((c, i) => this.card(c.id, { class: `card k-${CARDS[c.id].kind} ${CARDS[c.id].rarity}` + (c.sold ? ' sold' : s.gold < c.price ? ' off' : ''), on: () => { if (buy('card', i)) draw(); } }, c.sold ? 'sold' : c.price))),
         h('h3', { text: 'Recruits' }),
         h('div', { class: 'people' }, shop.pieces.map((p, i) => h('button', { class: 'pick' + (p.sold ? ' sold' : ''), disabled: p.sold || s.gold < p.price, on: () => { if (buy('piece', i)) draw(); } },
           this.person(p, YOU, h('div', { class: 'price' }, h('i'), p.sold ? 'hired' : String(p.price)))))),
