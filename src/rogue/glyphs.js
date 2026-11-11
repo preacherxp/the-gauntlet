@@ -75,6 +75,23 @@ export function cardArt(card) {
   return url;
 }
 
+// A square icon of a card, for the compact cards on phones: 32 by 32 pixels.
+export function cardIcon(card) {
+  const key = 'icon:' + card.id;
+  if (cache.has(key)) return cache.get(key);
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const color = KIND_COLOR[card.kind] || '#888';
+  const grad = ctx.createRadialGradient(64, 64, 6, 64, 64, 90);
+  grad.addColorStop(0, color); grad.addColorStop(0.6, shade(color, 0.35)); grad.addColorStop(1, '#0a0a14');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, 128, 128);
+  drawGlyph(ctx, card.glyph, 14, 14, 100, '#ffffff', 11);
+  const url = pixelate(c, 32, 32, { levels: 5 }).toDataURL('image/png');
+  cache.set(key, url);
+  return url;
+}
+
 // A small round badge for a relic.
 export function badge(glyph, color = KIND_COLOR.relic) {
   const key = 'badge:' + glyph + color;

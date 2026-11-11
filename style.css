@@ -62,9 +62,12 @@ button.primary:hover:not(:disabled) { border-image-source: var(--px-btn-gold-hi)
 .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; margin-top: 8px; }
 input[type="checkbox"] { appearance: none; width: 18px; height: 18px; margin: 0; background: var(--px-check) 0 0 / 18px 18px; cursor: pointer; flex: none; }
 input[type="checkbox"]:checked { background-image: var(--px-check-on); }
-input[type="range"] { appearance: none; flex: 1; height: 12px; background: #0e0c12; border: 2px solid #3a3042; cursor: pointer; }
-input[type="range"]::-webkit-slider-thumb { appearance: none; width: 10px; height: 14px; background: var(--px-thumb) 0 0 / 10px 14px; }
-input[type="range"]::-moz-range-thumb { width: 10px; height: 14px; border: none; border-radius: 0; background: var(--px-thumb) 0 0 / 10px 14px; }
+/* the slider is 36px tall to catch a finger; its track is the 8px stripe drawn in the middle */
+input[type="range"] { appearance: none; flex: 1; min-width: 0; height: 36px; margin: 0; cursor: pointer;
+  background: linear-gradient(#3a3042, #3a3042) 0 14px / 100% 2px no-repeat, linear-gradient(#0e0c12, #0e0c12) 0 16px / 100% 6px no-repeat, linear-gradient(#3a3042, #3a3042) 0 22px / 100% 2px no-repeat; }
+input[type="range"]::-webkit-slider-thumb { appearance: none; width: 14px; height: 20px; background: var(--px-thumb) 0 0 / 14px 20px; }
+input[type="range"]::-moz-range-thumb { width: 14px; height: 20px; border: none; border-radius: 0; background: var(--px-thumb) 0 0 / 14px 20px; }
+.checks label { min-height: 44px; }
 .foot { display: flex; gap: 6px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
 .help { padding-left: 22px; margin: 0; color: var(--bone); }
 .help li { margin: 6px 0; }
@@ -129,6 +132,7 @@ kbd { font: inherit; color: var(--brass-hi); padding: 0 4px; border: 2px solid #
 .card.k-utility { border-image-source: var(--px-card-utility); } .card.k-summon { border-image-source: var(--px-card-summon); }
 .card .art { display: block; width: 160px; height: 92px; border-bottom: 2px solid #000; }
 .card .cost { position: absolute; top: -18px; left: -18px; width: 32px; height: 32px; display: grid; place-items: center; color: #04161e; background: var(--px-cost) 0 0 / 32px 32px; z-index: 1; }
+.card .icon { display: none; }
 .card .nm { text-align: center; padding: 4px 4px 2px; color: var(--brass-hi); text-shadow: 2px 2px 0 #000; }
 .card .tx { padding: 0 6px; color: var(--bone); text-align: center; }
 .card.uncommon::after, .card.rare::after { content: ''; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; background: var(--px-gem) 0 0 / 6px 6px; }
@@ -138,14 +142,15 @@ kbd { font: inherit; color: var(--brass-hi); padding: 0 4px; border: 2px solid #
 .card .price { position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); padding: 0 10px; white-space: nowrap; border: 6px solid transparent; border-image: var(--px-panel) 6 fill stretch; }
 
 #r-bubbles, #r-tip { pointer-events: none; }
-.bubble { position: fixed; transform: translate(-50%, calc(-100% - 14px)); color: #1a1209; padding: 0 8px; max-width: 260px; text-align: center; z-index: 6;
+.bubble { position: fixed; transform-origin: var(--tail, 50%) 100%; color: #1a1209; padding: 0 8px; max-width: 260px; text-align: center; z-index: 6;
   border: 4px solid transparent; border-image: var(--px-bubble) 4 fill stretch; animation: pop .15s steps(3); }
-.bubble::after { content: ''; position: absolute; left: 50%; bottom: -14px; margin-left: -7px; width: 14px; height: 10px; background: var(--px-tail) 0 0 / 14px 10px; }
+.bubble::after { content: ''; position: absolute; left: var(--tail, 50%); bottom: -14px; margin-left: -7px; width: 14px; height: 10px; background: var(--px-tail) 0 0 / 14px 10px; }
+.bubble.tail-off::after { display: none; }
 .bubble[data-name]::before { content: attr(data-name); display: block; color: #7a6a4a; text-transform: uppercase; }
 .bubble.foe { color: #f4c8c4; border-image-source: var(--px-bubble-foe); }
 .bubble.foe::after { background-image: var(--px-tail-foe); }
 .bubble.fade { opacity: 0; transition: opacity .3s steps(3); }
-@keyframes pop { from { transform: translate(-50%, calc(-100% - 4px)) scale(.6); } }
+@keyframes pop { from { transform: scale(.6); } }
 #r-tip { position: fixed; z-index: 12; max-width: 320px; padding: 2px 8px; border-width: 4px; border-image: var(--px-tip) 4 fill stretch; }
 #r-tip .hd { color: var(--brass-hi); }
 #r-tip .dim, .dim { color: var(--dim); }
@@ -205,6 +210,7 @@ button.pick.sold { opacity: .35; }
 .chart .node .disc { fill: #17131c; stroke: #6a5e74; stroke-width: 4; }
 .chart .node .glyph, .chart .start .glyph { fill: none; stroke: #c8bca4; stroke-width: 10; stroke-linecap: square; stroke-linejoin: miter; }
 .chart .node .hit { fill: transparent; }
+.chart .node .disc, .chart .node .glyph, .chart .node .halo, .chart .you, .chart .start { pointer-events: none; }   /* the larger .hit square takes the tap */
 .chart .node.boss .disc { stroke: var(--blood); stroke-width: 5; }
 .chart .node.boss .glyph { stroke: var(--blood); }
 .chart .node.elite .glyph { stroke: #e8a040; }
@@ -235,65 +241,102 @@ button.pick.sold { opacity: .35; }
 .map-info .hint { color: var(--dim); }
 
 /* ------------------------------------------------------------ phones and small windows */
-.card .tx { display: block; }
+/* JavaScript measures the interface and publishes where the free space is:
+   --ui-top (below the top bar), --band-top (below the foe's panel and the prompt)
+   and --band-bottom (above the hand). Everything that floats is placed in that band. */
 @media (max-width: 820px), (max-height: 600px) {
-  /* small cards show cost, picture and name; a tap raises one to read it, a second tap plays it */
-  #r-hand { min-height: 150px; }
-  #r-hand .card { width: 104px; height: 140px; margin-left: -18px; }
-  #r-hand .card .art { width: 92px; height: 52px; }
-  #r-hand .card .nm { font-size: 20px; line-height: 22px; padding: 2px; }
-  #r-hand .card .tx { display: none; }
-  #r-hand .card:hover { transform: none; }
-  #r-hand .card.peek { width: 188px; height: 262px; transform: translateY(-40px); z-index: 10; border-image-source: var(--px-card-sel); }
-  #r-hand .card.peek .art { width: 176px; height: 100px; }
-  #r-hand .card.peek .tx { display: block; }
-  #r-hand .card.peek::before { content: 'tap again to play'; position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; color: var(--brass-hi); text-transform: uppercase; }
-  #r-aether { min-width: 60px; padding-bottom: 6px; }
-  #r-aether .orbs { max-width: 64px; }
-  #r-piles { min-width: 0; }
-  #r-piles .counts { display: none; }
-  #r-foe { width: auto; max-width: 66vw; top: 56px; padding: 0 8px; }
+  #r-top { top: 6px; left: 6px; right: 6px; gap: 6px; flex-wrap: nowrap; }
+  .brand span:last-child { display: none; }
+  #r-relics { display: none; }             /* the army screen lists them */
+  #r-run { gap: 8px; padding: 0 8px; min-width: 0; }
+  #r-run .act { display: none; }
+  #r-run .gold { white-space: nowrap; }
+  #r-top nav { display: none; }
+  #r-top nav.open { display: flex; flex-direction: column; position: absolute; top: calc(100% + 4px); right: 0; z-index: 12; max-height: calc(100vh - 70px); overflow-y: auto; }
+  #r-top nav.open button { margin: -2px 0 0; min-width: 200px; text-align: left; min-height: 48px; }
+  #r-top .menu { display: block; margin-left: auto; flex: none; }
+
+  #r-foe { top: var(--ui-top, 56px); left: 6px; width: auto; max-width: calc(var(--band-right, 100vw) - 12px); padding: 0 8px; }
   #r-foe .kind { display: none; }
   #r-foe .name { font-size: 20px; line-height: 24px; }
   #r-foe .trait { display: none; }
-  #r-prompt.minor { display: none; }
   #r-foe.open .trait { display: block; }
   #r-foe .turn { margin-top: 2px; padding-top: 2px; }
-  #r-prompt { top: auto; bottom: 166px; max-width: calc(100% - 20px); }
-  #toasts { bottom: 230px; }
-  .brand span:last-child { display: none; }
-  #r-top nav { display: none; }
-  #r-top nav.open { display: flex; flex-direction: column; position: absolute; top: 48px; right: 0; z-index: 12; }
-  #r-top nav.open button { margin: -2px 0 0; min-width: 180px; text-align: left; min-height: 48px; }
-  #r-top .menu { display: block; margin-left: auto; }
-  #r-run { gap: 8px; padding: 0 8px; }
-  #r-run .act { display: none; }
-  #r-screen { padding: 56px 6px 6px; }
+  #r-prompt { top: var(--band-start, 110px); left: 6px; right: auto; width: calc(var(--band-right, 100vw) - 12px); transform: none; max-width: none; }
+  #r-prompt.minor { display: none; }
+  #toasts { top: var(--band-top, 120px); bottom: auto; left: calc(var(--band-right, 100vw) / 2); max-width: calc(var(--band-right, 100vw) - 16px); }
+  .toast { white-space: normal; text-align: center; }
+
+  /* the hand: full cards, descriptions and all, in a strip that scrolls sideways */
+  #r-bottom { left: 0; right: 0; bottom: 0; padding: 4px 6px 6px; gap: 0 8px; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "aether piles" "hand hand"; align-items: center;
+    background: linear-gradient(rgba(7, 6, 10, 0), rgba(7, 6, 10, .9) 40px); }
+  #r-aether { grid-area: aether; display: flex; align-items: center; gap: 8px; padding: 0; min-width: 0; }
+  #r-aether .orbs { margin: 0; max-width: 90px; flex-wrap: wrap; justify-content: flex-start; }
+  #r-aether .lbl { white-space: nowrap; }
+  #r-piles { grid-area: piles; flex-direction: row; padding: 0; min-width: 0; gap: 4px; }
+  #r-piles .counts { display: none; }
+  #r-hand { grid-area: hand; min-height: 0; overflow-x: auto; overflow-y: hidden; padding: 20px 8px 4px 20px; gap: 12px; align-items: stretch;
+    scroll-snap-type: x proximity; touch-action: pan-x; scrollbar-width: none; }
+  #r-hand::-webkit-scrollbar { display: none; }
+  /* a phone's card is a wide row: a small square icon, then the name and the whole description */
+  #r-hand .card, #r-hand .card:first-child { margin-left: 0; width: min(296px, calc(100vw - 48px)); height: auto; min-height: 92px; scroll-snap-align: start;
+    display: grid; grid-template-columns: 64px 1fr; grid-template-rows: auto 1fr; column-gap: 8px; padding: 2px 6px 4px 2px; align-content: start; }
+  #r-hand .card .art { display: none; }
+  #r-hand .card .icon { display: block; grid-row: 1 / 3; width: 64px; height: 64px; border: 2px solid #000; }
+  #r-hand .card .nm, #r-hand .card .tx { text-align: left; padding: 0; }
+  #r-hand .card:hover, #r-hand .card.active { transform: none; }
+  #r-hand .card.uncommon::after, #r-hand .card.rare::after { top: 2px; right: 2px; }
+  .panel .cards .card .art { width: 144px; height: 72px; }
+  .card .tx { line-height: 22px; }
+
+  #r-screen { padding: var(--ui-top, 56px) 6px 6px; }
   .panel { padding: 10px 12px; }
   .panel h2 { font-size: 30px; line-height: 34px; }
+  .panel .foot { margin: 14px -12px -10px; padding: 8px 12px 10px; bottom: -10px; }
   .map-wrap { grid-template-columns: 1fr; }
+  .act-row { grid-template-columns: 30px 1fr; }
+  .act-row .st { grid-column: 2; }
   .checks { grid-template-columns: 1fr; }
   .people.grid { grid-template-columns: 1fr; }
-  .panel .cards { gap: 14px; }
-  .panel .cards .card { width: 150px; height: 236px; }
-  .panel .cards .card .art { width: 134px; height: 76px; }
-  #title { place-items: end center; padding: 0 8px 16px; }
-  #title .tcard { padding: 14px 12px; }
+  .person { flex-wrap: wrap; }
+  .panel .cards { gap: 16px; padding: 20px 0 24px 12px; }
+  .panel .cards .card { width: 156px; height: 256px; }
+  .choices { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .seg button { flex: 1 1 40%; }
+  #title { place-items: end center; padding: 0 8px 12px; }
+  #title .tcard { padding: 12px; max-width: 100%; }
   #title h1 { font-size: 40px; line-height: 44px; letter-spacing: 4px; }
-  #title button { min-width: 260px; }
+  #title .sub { margin: 10px auto 12px; }
+  #title button { min-width: 0; width: min(300px, 100%); }
+  .sheet { padding: 12px; }
+  .bubble { max-width: min(240px, 80vw); }
   button { min-height: 44px; }
 }
+
+/* the narrowest phones: the road's progress pips give way (the map shows them) */
+@media (max-width: 370px) {
+  #r-run .track, .brand { display: none; }
+  /* every pixel of height goes to the board: aether as a number, smaller card icons so descriptions wrap less */
+  #r-aether .orbs { display: none; }
+  #r-hand { padding-top: 14px; }
+  #r-hand .card, #r-hand .card:first-child { grid-template-columns: 48px 1fr; min-height: 76px; }
+  #r-hand .card .icon { width: 48px; height: 48px; }
+}
+
+/* a phone on its side: the hand becomes a column down the right edge */
 @media (max-height: 600px) and (min-width: 600px) {
-  /* a phone on its side: the hand goes small and to the right, and the map sits beside its notes */
-  #r-bottom { justify-content: flex-end; }
-  #r-hand { min-height: 112px; }
-  #r-hand .card { width: 84px; height: 108px; margin-left: -12px; }
-  #r-hand .card .art { width: 72px; height: 42px; }
-  #r-hand .card .nm { font-size: 10px; line-height: 12px; }
-  #r-hand .card.peek { transform: translateY(-120px); width: 176px; height: 240px; }
-  #r-hand .card.peek .nm { font-size: 20px; line-height: 22px; }
-  #r-hand .card.peek .art { width: 164px; height: 94px; }
-  #r-prompt { bottom: 128px; }
+  /* the top bar and the foe's panel head the column, so the board has the whole left side */
+  #r-top { left: auto; width: 336px; }
+  #r-top .brand { display: none; }
+  #r-foe { left: auto; right: 6px; width: 336px; max-width: none; }
+  #r-bottom { left: auto; right: 6px; top: var(--foe-bottom, 56px); bottom: 6px; width: 336px; grid-template-columns: 1fr auto; grid-template-rows: auto 1fr;
+    grid-template-areas: "aether piles" "hand hand"; align-items: center; align-content: stretch; padding: 4px; background: rgba(7, 6, 10, .88); }
+  #r-hand { flex-direction: column; overflow-x: hidden; overflow-y: auto; touch-action: pan-y; padding: 20px 4px 8px 20px; scroll-snap-type: y proximity; min-height: 0; align-self: stretch; }
+  #r-hand .card, #r-hand .card:first-child { flex: none; width: 296px; }
+  #title { place-items: center end; padding: 0 12px; }
+  #title .tcard { max-width: 380px; }
+  #title h1 { font-size: 30px; line-height: 34px; }
+  #title .sub { display: none; }
   .map-wrap { grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); }
-  #r-top nav.open { max-height: calc(100vh - 60px); overflow-y: auto; }
 }

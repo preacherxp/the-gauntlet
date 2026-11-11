@@ -6,7 +6,7 @@ import { CARDS } from './cards.js';
 import { RELICS, PERSONAS, ENCOUNTERS, CHAR_TYPE, WARBANDS, ACTS, STEPS_PER_ACT, REMOVE_PRICE, HEAL_PRICE } from './content.js';
 import { TRAITS } from './battle.js';
 import { PIECE_NAMES, PAWN, BISHOP, KNIGHT, FOE, YOU } from './rules.js';
-import { cardArt, badge, KIND_COLOR, mapTexture, MAP_GLYPH } from './glyphs.js';
+import { cardArt, cardIcon, badge, mapTexture, MAP_GLYPH } from './glyphs.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const s = (tag, attrs = {}, ...kids) => {
@@ -61,7 +61,7 @@ export class RogueUI {
     this.nav.addEventListener('click', (e) => { if (e.target.closest('button')) this.nav.classList.remove('open'); });
   }
 
-  // Small screens show small cards: a tap raises one to read, a second tap plays it.
+  // Small screens: phone layout, where the cards are wide rows showing their whole description.
   get compact() { return window.matchMedia('(max-width: 820px), (max-height: 600px)').matches; }
 
   setIcons(icons) { this.icons = icons; }
@@ -115,26 +115,60 @@ export class RogueUI {
       h('div', { class: 'counts' }, h('span', { title: 'Cards left to draw', text: `Draw ${view.deck}` }), h('span', { title: 'Cards played. They come back when the draw pile runs out', text: `Used ${view.discard}` })),
       ...view.buttons.map((b) => h('button', { class: b.primary ? 'primary' : '', text: b.label, title: b.title, on: () => this.on.button(b.act) })),
     );
+    this.placeOverlays();
   }
 
   cardTapped(i, e) {
     e.stopPropagation();
-    if (this.compact && this.peek !== i) { this.setPeek(i); this.on.peek && this.on.peek(i); return; }
     this.setPeek(-1);
     this.on.card(i);
+  }
+
+  // Measures the interface and publishes the free band between its parts as
+  // CSS variables, so the foe's panel, prompts, toasts and speech bubbles can
+  // be placed where nothing else is. Returns the band in screen pixels.
+  placeOverlays() {
+    const css = document.documentElement.style, W = window.innerWidth, H = window.innerHeight;
+    const box = (el) => (el && !el.hidden && el.getClientRects().length ? el.getBoundingClientRect() : null);
+    const topBar = box(this.root.querySelector('#r-top'));
+    const uiTop = Math.round((topBar ? topBar.bottom : 0) + 4);
+    css.setProperty('--ui-top', uiTop + 'px');
+    const foe = box(this.foeBox);
+    const foeBottom = Math.round(foe ? foe.bottom + 4 : uiTop);
+    css.setProperty('--foe-bottom', foeBottom + 'px');
+    let bottom = H, right = W;
+    const bar = box(this.bottom);
+    if (bar) {
+      const sidebar = bar.width < W * 0.5 && bar.height > H * 0.5;
+      if (sidebar) right = bar.left - 4;
+      else bottom = Math.min(...[this.aetherBox, this.handBox, this.pileBox].map(box).filter(Boolean).map((r) => r.top)) - 4;
+    }
+    // Where the free space left of any side column begins: below whatever of the top bar and
+    // the foe's panel is not in that column.
+    const left = (r) => r && r.left < right - 4;
+    const start = Math.round(left(foe) ? foeBottom : left(topBar) ? uiTop : 4);
+    css.setProperty('--band-start', start + 'px');
+    const prompt = box(this.promptBox);
+    const top = Math.round(Math.max(start, prompt ? prompt.bottom + 4 : 0));
+    css.setProperty('--band-top', top + 'px');
+    css.setProperty('--band-bottom', Math.round(bottom) + 'px');
+    css.setProperty('--band-right', Math.round(right) + 'px');
+    this.band = { top, bottom, right, start, foeBottom, uiTop, sidebar: right < W };
+    return this.band;
   }
   setPeek(i) {
     this.peek = i;
     [...this.handBox.children].forEach((node, j) => node.classList.toggle('peek', j === i));
   }
 
-  hideBattle() { this.bottom.hidden = true; this.foeBox.hidden = true; this.promptBox.hidden = true; this.handKey = null; this.bubbles.replaceChildren(); this.hideTip(); }
+  hideBattle() { this.bottom.hidden = true; this.foeBox.hidden = true; this.promptBox.hidden = true; this.handKey = null; this.bubbles.replaceChildren(); this.hideTip(); this.placeOverlays(); }
 
   card(id, props = {}, price = null) {
     const c = CARDS[id];
     return h('div', { class: `card k-${c.kind} ${c.rarity}`, ...props },
       h('span', { class: 'cost', text: String(c.cost) }),
       h('img', { class: 'art', src: cardArt(c), alt: '' }),
+      h('img', { class: 'icon', src: cardIcon(c), alt: '' }),   // shown instead of the picture on the compact cards
       h('div', { class: 'nm', text: c.name }),
       h('div', { class: 'tx', text: c.text }),
       price != null && h('div', { class: 'price' }, h('i'), String(price)),
@@ -151,8 +185,8 @@ export class RogueUI {
     this.tipBox.hidden = false;
     this.tipBox.replaceChildren(...lines.map((l, i) => h('div', { class: i === 0 ? 'hd' : l.dim ? 'dim' : '', text: l.text || l })));
     const w = this.tipBox.offsetWidth, hh = this.tipBox.offsetHeight;
-    this.tipBox.style.left = Math.min(window.innerWidth - w - 8, x + 16) + 'px';
-    this.tipBox.style.top = Math.max(8, y - hh - 12) + 'px';
+    this.tipBox.style.left = Math.max(4, Math.min(window.innerWidth - w - 4, x + 16)) + 'px';
+    this.tipBox.style.top = Math.max(4, Math.min(window.innerHeight - hh - 4, y - hh - 12)) + 'px';
   }
   hideTip() { this.tipBox.hidden = true; }
 
@@ -248,7 +282,7 @@ export class RogueUI {
         !live && visited.get(r) !== i && (r < st.step || (here && r <= here.step)) ? 'past' : ''].join(' ');
       const size = n.kind === 'boss' ? 30 : 21;
       const g = s('g', { class: cls, transform: `translate(${x} ${y})`, 'data-step': r, 'data-i': i },
-        s('rect', { class: 'hit', x: -size - 12, y: -size - 12, width: (size + 12) * 2, height: (size + 12) * 2 }),   // a bigger target for fingers
+        s('rect', { class: 'hit', x: -size - 24, y: -size - 24, width: (size + 24) * 2, height: (size + 24) * 2 }),   // a bigger target for fingers
         live ? s('rect', { class: 'halo', x: -size - 7, y: -size - 7, width: (size + 7) * 2, height: (size + 7) * 2, transform: 'rotate(45)' }) : null,
         s('rect', { class: 'disc', x: -size, y: -size, width: size * 2, height: size * 2, transform: 'rotate(45)' }),
         s('path', { class: 'glyph', d: MAP_GLYPH[n.kind], transform: `translate(${-size * 0.62} ${-size * 0.62}) scale(${size * 0.0124})` }));

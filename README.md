@@ -6,16 +6,6 @@ It ships no asset files. Every mesh, texture, card picture, portrait, sky and so
 
 **Play it in a browser:** https://preacherxp.github.io/the-gauntlet/ (desktop or phone).
 
-![Twelve pawns, each wearing its temper, facing the enemy's back rank](docs/lineup.png)
-
-| The run map | A fight | On a phone |
-|---|---|---|
-| ![The map of the first act](docs/map.png) | ![A fight, with the hand of cards](docs/battle.png) | ![The same fight on a phone](docs/phone.png) |
-
-Every temper dies its own way. Frames from the screenshot tool, left to right over 1.3 seconds:
-
-![Thirteen death animations, six frames each](docs/deaths.png)
-
 ## Run it
 
 ```
@@ -52,10 +42,10 @@ Keys: `1` to `5` play a card, `Esc` cancels, `Enter` starts the fight, `M` mutes
 
 - **Tap** a piece to select it and see what it is, then tap where it should go.
 - **Press and hold** any piece to read it without doing anything.
-- **Cards** are small on a phone. Tap one to raise it and read it; tap it again to play it.
+- **Cards** become wide rows with a small icon and the whole description, in a hand you swipe sideways (on its side, a column you swipe up and down). Tap one to play it.
 - **Drag** to turn the camera, **pinch** to zoom.
 - **Menu** in the top corner holds the map, army, deck, settings and sound.
-- It works upright and on its side; the board is re-framed when the phone turns.
+- It works upright and on its side; the board is framed in the space the interface leaves, and re-framed when the phone turns.
 
 ## How the assets are made
 
@@ -92,7 +82,10 @@ Keys: `1` to `5` play a card, `Esc` cancels, `Enter` starts the fight, `M` mutes
 ```
 npm test            # rules, runs, maps and every animation, about a minute
 npm run shots       # plays through the game in Chrome, writes screenshots to ./shots
+npm run test:e2e    # every screen on eight phones and tablets, with Playwright
 ```
+
+`npm run test:e2e` uses Playwright (`@playwright/test`, Apache-2.0). It needs Chrome installed, plus WebKit, Safari's engine, which Playwright downloads once: `npx playwright install webkit`. On iPhone SE, 13 and 15 Pro Max, an iPhone 13 on its side, an iPad Mini, a Pixel 7 upright and on its side, and a Galaxy S8, it opens every screen: title, help, settings, warbands, the map, a fight with a full hand of the wordiest cards, a card being cast, two pieces talking at once, a tooltip at the screen's edge, the menu, rewards, the shop, the army, the deck, camp, an event, a boss fight, the retreat dialog and the end of a run. On each it saves a screenshot to `shots/devices/<device>/` (or the folder in `SHOTS`) and fails if text spills out of its frame, runs off the screen or is under 20px; if a box cuts off what it holds; if parts of the interface overlap; if anything to tap is smaller than a finger; or if the board is too small to play on or more than 12% covered. A second test plays a fight by touch on each device.
 
 `npm test` runs two files. `tests/rogue.test.mjs` checks movement on small boards, every card, relic, temper and enemy habit, the maps, and the shop, camp and events. It ends with a bot playing whole runs and prints how often it beat each fight (`--runs=60` for more). `tests/motion.test.mjs` runs every temper's move, attack and death on the real piece meshes and checks that each finishes in the right place, that each looks and moves differently from the others, and how long each takes.
 
@@ -106,4 +99,4 @@ How hard the game is has only been measured with that bot, which plays its cards
 
 ## Licences
 
-The game's code uses [three.js](https://threejs.org) 0.187.0 (MIT), and `puppeteer-core` (Apache-2.0) only for the screenshot tool.
+The game's code uses [three.js](https://threejs.org) 0.187.0 (MIT), and `puppeteer-core` and `@playwright/test` (both Apache-2.0) only for the screenshot tool and the device checks.

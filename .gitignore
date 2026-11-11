@@ -2,3 +2,5 @@ node_modules/
 shots/
 dist/
 _site/
+test-results/
+playwright-report/

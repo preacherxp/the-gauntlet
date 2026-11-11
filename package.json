@@ -8,12 +8,14 @@
     "start": "node tools/serve.mjs",
     "test": "node tests/rogue.test.mjs && node tests/motion.test.mjs",
     "build": "node tools/build-site.mjs dist",
-    "shots": "node tools/shoot.mjs"
+    "shots": "node tools/shoot.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "three": "0.187.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "puppeteer-core": "25.17.0"
   }
 }

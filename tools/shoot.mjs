@@ -340,14 +340,13 @@ try {
     await sleep(800);
     await ms('73_phone_battle');
     await mp.evaluate(() => { const G = window.aether.gauntlet, b = G.battle; b.hand = ['aegis', 'frost', 'insight']; b.aether = 4; G.ui.handKey = null; G.refresh(); });
+    // a phone's cards show their whole description, so one tap plays the card
+    expect(await mp.$eval('#r-hand .card:nth-child(1) .tx', (e) => e.getBoundingClientRect().bottom <= window.innerHeight && e.offsetHeight > 0),
+      'phone: a card shows its description');
     await mp.tap('#r-hand .card:nth-child(1)');
     await sleep(250);
-    expect(await mp.$eval('#r-hand .card:nth-child(1)', (e) => e.classList.contains('peek')) && (await mp.evaluate(() => window.aether.gauntlet.phase)) === 'player',
-      'phone: the first tap on a card raises it to read, without playing it');
-    await ms('74_phone_card_peek');
-    await mp.tap('#r-hand .card:nth-child(1)');
-    await sleep(250);
-    expect((await mp.evaluate(() => window.aether.gauntlet.phase)) === 'casting', 'phone: the second tap plays it');
+    expect((await mp.evaluate(() => window.aether.gauntlet.phase)) === 'casting', 'phone: a tap on a card plays it');
+    await ms('74_phone_card_cast');
     const pawn = await mp.evaluate(() => { const b = window.aether.gauntlet.battle; const i = b.cells.findIndex((p) => p && p.side === 0 && p.type === 1); return { x: i % b.w, y: Math.floor(i / b.w) }; });
     await mTap(pawn.x, pawn.y);
     await mUntil('player');
@@ -385,7 +384,7 @@ try {
     await sleep(900);
     await ms('79_phone_sideways');
     const fits = await mp.evaluate(() => { const r = document.getElementById('r-hand').getBoundingClientRect(); return r.bottom <= window.innerHeight + 2 && r.top > 120; });
-    expect(fits, 'phone sideways: the hand fits on screen below the board');
+    expect(fits, 'phone sideways: the hand fits on screen, in a column beside the board');
     await mp.close();
   }
 

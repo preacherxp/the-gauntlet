@@ -99,18 +99,58 @@ export class Stage {
       this.composer.setSize(w, h);
     }
     this.camera.aspect = w / h;
-    this.camera.setViewOffset(w, h, this.insets.right / 2, (this.insets.bottom - this.insets.top) / 2, w, h);
+    // In a fight the picture is shifted so the board, as the camera actually sees it, sits in the
+    // middle of the free space; elsewhere the middle of the board goes to the middle of that space.
+    const f = this.board ? this.frame() : null;
+    this.camera.setViewOffset(w, h, f ? f.x : this.insets.right / 2, f ? f.y : (this.insets.bottom - this.insets.top) / 2, w, h);
     this.camera.updateProjectionMatrix();
+  }
+
+  // For a fight (`this.board` = { w, h } squares): how far the camera must stand, at the tilt `phi`,
+  // for the board to fill the free part of the view: its squares, a margin of its border, and the
+  // pieces standing on its far row. Also returns the shift (x, y in pixels) that centres it there.
+  // Perspective makes the near edge wider than the far one, so the corners are projected rather
+  // than estimated.
+  frame(phi = this.framePhi || 0.66) {
+    const W = this.width, H = this.height, ins = this.insets;
+    const fw = Math.max(120, W - ins.right), fh = Math.max(120, H - ins.bottom - ins.top);
+    const hx = this.board.w / 2 + 0.5, hz = this.board.h / 2 + 0.5;   // half a square of border shows
+    const cam = (this.fitCam = this.fitCam || new THREE.PerspectiveCamera());
+    cam.fov = this.camera.fov; cam.aspect = W / H; cam.near = 0.1; cam.far = 2000;
+    cam.clearViewOffset(); cam.updateProjectionMatrix();
+    const s = new THREE.Spherical(), v = new THREE.Vector3();
+    const box = (r) => {
+      s.set(r, phi, 0); cam.position.setFromSpherical(s).add(TARGET); cam.lookAt(TARGET); cam.updateMatrixWorld();
+      const b = { l: Infinity, r: -Infinity, t: Infinity, b: -Infinity };
+      for (const x of [-hx, hx]) for (const z of [-hz, hz]) for (const y of [0, 1.3]) {
+        v.set(x, y, z).project(cam);
+        const px = (v.x + 1) / 2 * W, py = (1 - v.y) / 2 * H;
+        b.l = Math.min(b.l, px); b.r = Math.max(b.r, px); b.t = Math.min(b.t, py); b.b = Math.max(b.b, py);
+      }
+      return b;
+    };
+    let r = 20, b;
+    for (let i = 0; i < 10; i++) {
+      b = box(r);
+      const need = Math.max((b.r - b.l) / (fw * 0.97), (b.b - b.t) / (fh * 0.97));
+      const next = THREE.MathUtils.clamp(r * need, 6, 44);
+      if (Math.abs(next - r) < 0.01) break;
+      r = next;
+    }
+    b = box(r);
+    return { radius: r, x: (b.l + b.r) / 2 - fw / 2, y: (b.t + b.b) / 2 - (ins.top + fh / 2) };
   }
 
   // Distance at which the whole board fits the free part of the view.
   fitDistance() {
+    if (this.board) return this.frame().radius;
     const w = Math.max(200, this.width - this.insets.right), h = Math.max(160, this.height - this.insets.bottom - this.insets.top);
     const tan = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
-    const k = (this.span || 8) / 8;        // boards smaller than 8 squares let the camera come closer
+    const span = this.span || 8, k = span / 8;    // smaller boards let the camera come closer
     const byHeight = 5.3 * k / (tan * (h / this.height));
-    const byWidth = 6.0 * k / (tan * this.camera.aspect * (w / this.width));
-    return THREE.MathUtils.clamp(Math.max(byHeight, byWidth) * 1.02, 9, 44);
+    // across, frame the squares and their border; the stone base may run off the sides of a narrow screen
+    const byWidth = (span / 2 + 1.0) / (tan * this.camera.aspect * (w / this.width));
+    return THREE.MathUtils.clamp(Math.max(byHeight, byWidth) * 1.02, 6, 44);
   }
 
   spherical() { return new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(TARGET)); }
@@ -137,10 +177,14 @@ export class Stage {
 
   viewFrom(color, seconds = 1.1) {
     this.side = color;
+    this.framePhi = 0.66; this.resize();
     return this.flyTo({ theta: color === WHITE ? 0 : Math.PI, phi: 0.66, radius: this.fitDistance() }, seconds);
   }
 
-  topDown() { return this.flyTo({ theta: this.side === WHITE ? 0 : Math.PI, phi: 0.03, radius: this.fitDistance() * 1.02 }, 0.9); }
+  topDown() {
+    this.framePhi = 0.03; this.resize();
+    return this.flyTo({ theta: this.side === WHITE ? 0 : Math.PI, phi: 0.03, radius: this.fitDistance() * 1.02 }, 0.9);
+  }
 
   shake(amount) { if (this.shakeEnabled) this.shakeAmount = Math.max(this.shakeAmount, amount); }
 

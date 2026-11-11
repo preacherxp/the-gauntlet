@@ -68,7 +68,7 @@ function layout() {
   // On the title the card sits on the left, so the board moves right.
   if (shell.titleShown && window.innerWidth > 900) stage.setInsets(-Math.min(660, window.innerWidth * 0.44), 0);
   else if (shell.titleShown) stage.setInsets(0, Math.min(window.innerHeight * 0.5, 330));
-  else { const i = gauntlet ? gauntlet.inset() : { bottom: 0, top: 0 }; stage.setInsets(0, i.bottom, i.top); }
+  else { const i = gauntlet ? gauntlet.inset() : { right: 0, bottom: 0, top: 0 }; stage.setInsets(i.right, i.bottom, i.top); }
   env.resize(stage.height, stage.renderer.getPixelRatio());
   fx.resize(stage.height, stage.renderer.getPixelRatio());
 }

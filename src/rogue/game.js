@@ -64,6 +64,7 @@ export class Gauntlet {
     this.ui.closeScreen(); this.ui.hideBattle();
     this.clearTalk();
     this.host.stage.span = 8;
+    this.host.stage.board = null;
     this.phase = 'idle';
   }
 
@@ -91,6 +92,7 @@ export class Gauntlet {
     this.arena.show(true);
     this.arena.build({ w, h, cells, rock: new Uint8Array(w * h), well: new Uint8Array(w * h) }, { intro: false });
     this.host.stage.span = 7;
+    this.host.stage.board = null;
     this.host.stage.setAutoRotate(true);
     this.host.stage.flyTo({ phi: 1.02, radius: this.host.stage.fitDistance() * 1.12 }, 1.2);
   }
@@ -126,14 +128,12 @@ export class Gauntlet {
 
   // How much of the view the interface covers, so the board can be framed in what is left.
   inset() {
-    if (this.ui.bottom.hidden) return { bottom: 0, top: 0 };
-    const H = window.innerHeight;
-    const bottom = Math.min(H * 0.45, Math.max(0, H - this.ui.handBox.getBoundingClientRect().top + 6));
-    const foe = this.ui.foeBox.hidden ? 0 : this.ui.foeBox.getBoundingClientRect().bottom;
-    // A tall phone stacks the foe's panel above the board; a wide screen keeps it to one side.
-    const tall = window.innerHeight > window.innerWidth;
-    const top = this.ui.compact && tall ? Math.min(H * 0.22, foe + 4) : 0;
-    return { bottom: tall ? bottom : Math.min(bottom, H * 0.34), top };
+    const b = this.ui.placeOverlays(), W = window.innerWidth, H = window.innerHeight;
+    if (this.ui.bottom.hidden) return { right: 0, bottom: 0, top: 0 };
+    // A tall phone stacks the top bar and the foe's panel above the board; on its side they head
+    // the hand's column, leaving the board the whole height. Wide screens have room to spare.
+    const top = this.ui.compact ? b.start : 0;
+    return { right: b.sidebar ? W - b.right : 0, bottom: Math.max(0, H - b.bottom), top };
   }
 
   // Show whatever the run's phase calls for.
@@ -145,6 +145,7 @@ export class Gauntlet {
     this.ui.hud(run);
     if (s.phase === 'battle') { this.startBattle(); return; }
     this.battle = null;
+    this.host.stage.board = null;
     this.phase = 'screen';
     this.arena.show(false);
     this.ui.hideBattle();
@@ -218,6 +219,7 @@ export class Gauntlet {
     this.clearTalk();
     arena.show(true);
     host.stage.span = Math.max(setup.w, setup.h) + 0.1;
+    host.stage.board = { w: setup.w, h: setup.h };
     host.stage.setAutoRotate(false);
     this.refresh();
     host.layout();
@@ -406,6 +408,7 @@ export class Gauntlet {
     while (this.talk.length > 2) this.talk.shift().el.remove();
     const el = this.ui.bubble(text, kind);
     if (name) el.dataset.name = name;
+    el.style.visibility = 'hidden';            // until update() finds it a place
     this.talk.push({ el, id, pos: pos.clone(), until: performance.now() + ms });
     this.host.audio.play('bark');
   }
@@ -415,16 +418,42 @@ export class Gauntlet {
   update(dt) {
     if (!this.active) return;
     this.arena.update(dt);
+    // Now and then, check whether the interface has changed size (a hand of longer cards, the
+    // foe's panel opened) and, if the free space moved, frame the board in it again.
+    if (this.battle && (this.frames = (this.frames || 0) + 1) % 15 === 0) {
+      const i = this.inset(), was = this.host.stage.insets;
+      if (Math.abs(i.right - was.right) > 6 || Math.abs(i.bottom - was.bottom) > 6 || Math.abs(i.top - was.top) > 6) { this.host.layout(); this.refit(); }
+    }
     if (!this.talk.length) return;
     const now = performance.now(), cam = this.host.stage.camera, rect = this.host.stage.canvas.getBoundingClientRect();
     const v = new THREE.Vector3();
+    const band = this.ui.placeOverlays();       // measured afresh: the interface may have moved since
     this.talk = this.talk.filter((t) => { if (now > t.until) { t.el.remove(); return false; } return true; });
+    // Each bubble sits above its speaker, but is kept inside the free band and off the other bubbles.
+    const placed = [];
     for (const t of this.talk) {
       const head = this.arena.headOf(t.id, v);
       if (head) t.pos.copy(head); else v.copy(t.pos);
       v.project(cam);
-      t.el.style.left = rect.left + ((v.x + 1) / 2) * rect.width + 'px';
-      t.el.style.top = rect.top + ((1 - v.y) / 2) * rect.height + 'px';
+      const x = rect.left + ((v.x + 1) / 2) * rect.width, y = rect.top + ((1 - v.y) / 2) * rect.height;
+      const w = t.el.offsetWidth, h = t.el.offsetHeight;
+      let left = Math.max(4, Math.min(band.right - w - 4, x - w / 2));
+      let top = Math.max(band.top, Math.min(band.bottom - h, y - h - 14));
+      for (const p of placed) {
+        if (left < p.left + p.w && left + w > p.left && top < p.top + p.h && top + h > p.top) {
+          const below = p.top + p.h + 6, above = p.top - h - 6;
+          top = below + h <= band.bottom ? below : Math.max(band.top, above);
+        }
+      }
+      // No room in the free band (a small phone, a prompt showing): say nothing rather than cover the interface.
+      const fits = top >= band.top - 1 && top + h <= band.bottom + 1 && left + w <= band.right + 1
+        && !placed.some((p) => left < p.left + p.w && left + w > p.left && top < p.top + p.h && top + h > p.top);
+      t.el.style.visibility = fits ? '' : 'hidden';
+      if (fits) placed.push({ left, top, w, h });
+      t.el.style.left = left + 'px';
+      t.el.style.top = top + 'px';
+      t.el.style.setProperty('--tail', Math.max(10, Math.min(w - 10, x - left)) + 'px');
+      t.el.classList.toggle('tail-off', Math.abs(top - (y - h - 14)) > 6);   // pushed away from the speaker: no pointer
       t.el.classList.toggle('fade', t.until - now < 400);
     }
   }
