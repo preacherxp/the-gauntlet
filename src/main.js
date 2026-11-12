@@ -35,9 +35,16 @@ const load = () => {
 const store = (v) => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(v)); } catch { /* private mode */ } };
 const frame = () => new Promise((r) => requestAnimationFrame(r));
 
+// A link with ?mute (or ?mute=1) plays with no sound at all: no audio is ever started, and the
+// saved sound setting is left as it was. ?mute=0 or ?mute=false is the same as no ?mute.
+const MUTE_PARAM = new URLSearchParams(location.search).get('mute');
+const SILENT = MUTE_PARAM !== null && !/^(0|false|no|off)$/i.test(MUTE_PARAM);
+
 const app = { settings: load(), themeNow: null, mats: null, level: 'high' };
 const shell = new Shell();
 const audio = new AudioEngine();
+audio.disabled = SILENT;
+const muted = () => SILENT || app.settings.muted;
 const tweens = new Tweens();
 let stage, env, fx, textures, gauntlet;
 
@@ -96,10 +103,10 @@ function applySettings(changed) {
   if (!changed || changed === 'quality') applyQuality();
   tweens.speed = s.animSpeed > 0 ? s.animSpeed : Infinity;
   audio.setVolumes(s.sfx, s.music);
-  audio.setMuted(s.muted);
+  audio.setMuted(muted());
   stage.shakeEnabled = s.shake;
   fx.enabled = s.particles;
-  if (gauntlet) gauntlet.ui.setMuted(s.muted);
+  if (gauntlet) gauntlet.ui.setMuted(muted());
 }
 
 function layout() {
@@ -115,7 +122,10 @@ const openSettings = () => shell.settings(app.settings, (field, value) => {
   if (field === 'quality' && value === 'auto') app.settings.autoLevel = null;    // choosing Auto again guesses afresh
   applySettings(field);
 });
-const toggleMute = () => { app.settings.muted = !app.settings.muted; applySettings('muted'); };
+const toggleMute = () => {
+  if (SILENT) { shell.toast('Sound is off for this link. Remove ?mute from the address to hear it'); return; }
+  app.settings.muted = !app.settings.muted; applySettings('muted');
+};
 
 // -------------------------------------------------------------------- title
 function showTitle() {
@@ -228,7 +238,7 @@ async function boot() {
     toast: (text, kind) => shell.toast(text, kind),
     confirm: (...a) => shell.confirm(...a),
     openSettings, toggleMute,
-    muted: () => app.settings.muted,
+    muted,
     toTitle: showTitle,
     titleTheme: TITLE_THEME,
   });

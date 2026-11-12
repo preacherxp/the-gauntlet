@@ -10,6 +10,7 @@ export class AudioEngine {
     this.sfxVolume = 0.8;
     this.musicVolume = 0.45;
     this.muted = false;
+    this.disabled = false;     // set before the first init(): no audio is ever created (the ?mute link)
     this.theme = null;
     this.musicOn = false;
     this.timer = null;
@@ -19,6 +20,7 @@ export class AudioEngine {
 
   // Must be called from a user gesture the first time.
   init() {
+    if (this.disabled) return;
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;

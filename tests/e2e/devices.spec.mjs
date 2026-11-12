@@ -19,8 +19,18 @@ const phase = (page, p) => page.waitForFunction((x) => window.aether.gauntlet.ph
 const runPhase = (page, p) => page.waitForFunction((x) => window.aether.gauntlet.run && window.aether.gauntlet.run.s.phase === x, p, { timeout: 40000 });
 const G = (page, fn, arg) => page.evaluate(fn, arg);
 
-// Where a square of the board is on the screen.
-const cell = (page, x, y, high = true) => page.evaluate(([cx, cy, hi]) => {
+// Waits until the camera has settled into the space the interface leaves (the board is reframed
+// when, say, the hand grows), so that a square's place on screen is where it will stay.
+const settle = (page) => page.waitForFunction(() => {
+  const g = window.aether.gauntlet, st = window.aether.stage;
+  if (!g.battle) return true;
+  const i = g.inset(), w = st.insets;
+  return !g.needsRefit && !st.cameraBusy && Math.abs(i.bottom - w.bottom) <= 6 && Math.abs(i.top - w.top) <= 6 && Math.abs(i.right - w.right) <= 6;
+}, null, { timeout: 15000 });
+
+// Where a square of the board is on the screen, once the camera is still.
+const cell = async (page, x, y, high = true) => { await settle(page); return cellNow(page, x, y, high); };
+const cellNow = (page, x, y, high = true) => page.evaluate(([cx, cy, hi]) => {
   const { stage, gauntlet } = window.aether, A = gauntlet.arena, idx = cy * A.w + cx, pc = A.pieceAt(idx);
   const v = A.world(idx).setY(pc && hi ? pc.height * 0.6 : 0.03).project(stage.camera), r = stage.canvas.getBoundingClientRect();
   return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height };
@@ -31,12 +41,7 @@ class Sweep {
   async check(name) {
     await this.page.waitForTimeout(300);
     // in a fight, let the camera settle into the space the interface now leaves
-    await this.page.waitForFunction(() => {
-      const g = window.aether.gauntlet, st = window.aether.stage;
-      if (!g.battle) return true;
-      const i = g.inset(), w = st.insets;
-      return !g.needsRefit && !st.cameraBusy && Math.abs(i.bottom - w.bottom) <= 6 && Math.abs(i.top - w.top) <= 6 && Math.abs(i.right - w.right) <= 6;
-    }, null, { timeout: 15000 }).catch(() => {});   // if it never settles, the audit below says what is wrong
+    await settle(this.page).catch(() => {});   // if it never settles, the audit below says what is wrong
     for (const f of await this.page.evaluate(audit)) this.problems.push(`${name}: ${f}`);
     await this.page.screenshot({ path: path.join(this.dir, `${String(++this.n).padStart(2, '0')}_${name}.jpg`), type: 'jpeg', quality: 72 });
   }
