@@ -52,7 +52,7 @@ export class Gauntlet {
   show() {
     this.active = true;
     this.host.root.hidden = false;
-    this.ui.setIcons(this.host.icons());
+    this.ui.setIcons(this.host.icons);
     this.ui.setMuted(this.host.muted());
   }
 
@@ -115,8 +115,15 @@ export class Gauntlet {
 
   setTheme(theme, mats) {
     this.arena.setTheme(theme, mats);
-    this.ui.setIcons(this.host.icons());
-    try { this.ui.personaIcons = personaIcons(this.host.stage, mats); } catch (err) { console.warn('persona portraits failed', err); }
+    this.ui.setIcons(this.host.icons);
+    // Portraits of each temper, drawn the first time a screen shows one, and kept per world.
+    const cache = (this.portraitCache = this.portraitCache || new WeakMap());
+    this.ui.portraits = () => {
+      if (!cache.has(mats)) {
+        try { cache.set(mats, personaIcons(this.host.stage, mats)); } catch (err) { console.warn('persona portraits failed', err); cache.set(mats, {}); }
+      }
+      return cache.get(mats);
+    };
   }
   // After a resize or a turn of the phone, pull the camera in or out to fit the board again.
   refit() {
@@ -141,7 +148,7 @@ export class Gauntlet {
     const run = this.run, s = run.s;
     this.token++;
     this.host.applyTheme(ACTS[Math.min(s.act, ACTS.length - 1)].theme);
-    this.ui.setIcons(this.host.icons());
+    this.ui.setIcons(this.host.icons);
     this.ui.hud(run);
     if (s.phase === 'battle') { this.startBattle(); return; }
     this.battle = null;

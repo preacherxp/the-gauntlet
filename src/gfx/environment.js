@@ -12,10 +12,13 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
-const SKY_FRAG = /* glsl */`
+// The sky's costly part, its nebula and clouds (sixteen octaves of noise a
+// pixel), is painted once per world into a cube map: colour to add in rgb,
+// cloud cover in alpha. The live sky below only looks it up.
+const SKY_NOISE_FRAG = /* glsl */`
 varying vec3 vDir;
-uniform vec3 uTop, uHorizon, uBottom, uNebA, uNebB, uSunDir, uSunColor, uCloudColor;
-uniform float uNebula, uSunSize, uSunGlow, uClouds, uBands, uTime, uSharp;
+uniform vec3 uNebA, uNebB;
+uniform float uNebula, uClouds;
 
 float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 float noise(vec3 x) {
@@ -33,27 +36,42 @@ float fbm(vec3 p) {
 void main() {
   vec3 d = normalize(vDir);
   float h = d.y;
-  vec3 col = h > 0.0 ? mix(uHorizon, uTop, pow(h, uSharp)) : mix(uHorizon, uBottom, pow(-h, 0.45));
-
+  vec3 col = vec3(0.0);
+  float m = 0.0;
   if (uNebula > 0.001) {
     vec3 q = d * 2.2;
-    float w = fbm(q + uTime * 0.004);
+    float w = fbm(q);
     float n1 = fbm(q * 1.3 + w * 1.5 + vec3(3.1, 0.0, 1.2));
     float n2 = fbm(q * 1.9 - w * 1.2 + vec3(-4.0, 2.2, 0.7));
     col += uNebA * pow(smoothstep(0.38, 0.85, n1), 2.0) * uNebula * 0.85;
     col += uNebB * pow(smoothstep(0.42, 0.9, n2), 2.0) * uNebula * 0.7;
   }
+  if (uClouds > 0.001) {
+    vec2 cp = d.xz / (abs(h) + 0.22);
+    float c = fbm(vec3(cp * 1.3, 1.0));
+    m = smoothstep(0.46, 0.74, c) * smoothstep(-0.03, 0.18, h) * uClouds * 0.85;
+  }
+  gl_FragColor = vec4(col, m);
+}`;
+
+const SKY_FRAG = /* glsl */`
+varying vec3 vDir;
+uniform vec3 uTop, uHorizon, uBottom, uSunDir, uSunColor, uCloudColor;
+uniform float uSunSize, uSunGlow, uBands, uSharp;
+uniform samplerCube uNoise;
+
+void main() {
+  vec3 d = normalize(vDir);
+  float h = d.y;
+  vec3 col = h > 0.0 ? mix(uHorizon, uTop, pow(h, uSharp)) : mix(uHorizon, uBottom, pow(-h, 0.45));
 
   vec3 s = normalize(uSunDir);
   float sd = dot(d, s);
 
-  if (uClouds > 0.001) {
-    vec2 cp = d.xz / (abs(h) + 0.22);
-    float c = fbm(vec3(cp * 1.3 + uTime * 0.008, 1.0));
-    float m = smoothstep(0.46, 0.74, c) * smoothstep(-0.03, 0.18, h);
-    vec3 lit = uCloudColor * (0.55 + 1.1 * pow(max(sd, 0.0), 3.0));
-    col = mix(col, lit, m * uClouds * 0.85);
-  }
+  vec4 baked = textureCube(uNoise, d);
+  col += baked.rgb;
+  vec3 lit = uCloudColor * (0.55 + 1.1 * pow(max(sd, 0.0), 3.0));
+  col = mix(col, lit, baked.a);
 
   float ang = acos(clamp(sd, -1.0, 1.0));
   float disc = smoothstep(uSunSize, uSunSize * 0.94, ang);
@@ -185,11 +203,21 @@ export class Environment {
       uNebA: { value: new THREE.Color() }, uNebB: { value: new THREE.Color() }, uSunDir: { value: new THREE.Vector3(0, 1, 0) },
       uSunColor: { value: new THREE.Color() }, uCloudColor: { value: new THREE.Color() },
       uNebula: { value: 0 }, uSunSize: { value: 0.03 }, uSunGlow: { value: 1 }, uClouds: { value: 0 }, uBands: { value: 0 },
-      uTime: { value: 0 }, uSharp: { value: 0.5 },
+      uSharp: { value: 0.5 }, uNoise: { value: null },
     };
     this.skyMaterial = new THREE.ShaderMaterial({
       uniforms: this.skyUniforms, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, side: THREE.BackSide, depthWrite: false, depthTest: false,
     });
+    // where the nebula and clouds are baked, once per world
+    const u = this.skyUniforms;
+    this.skyNoiseScene = new THREE.Scene();
+    this.skyNoiseScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), new THREE.ShaderMaterial({
+      uniforms: { uNebA: u.uNebA, uNebB: u.uNebB, uNebula: u.uNebula, uClouds: u.uClouds },
+      vertexShader: SKY_VERT, fragmentShader: SKY_NOISE_FRAG, side: THREE.BackSide, depthWrite: false, depthTest: false,
+    })));
+    this.skyNoiseTarget = new THREE.WebGLCubeRenderTarget(512, { type: THREE.HalfFloatType, generateMipmaps: false, minFilter: THREE.LinearFilter, depthBuffer: false });
+    this.skyNoiseCamera = new THREE.CubeCamera(1, 1000, this.skyNoiseTarget);
+    u.uNoise.value = this.skyNoiseTarget.texture;
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(600, 48, 24), this.skyMaterial);
     this.sky.renderOrder = -10;
     this.sky.frustumCulled = false;
@@ -307,6 +335,13 @@ export class Environment {
     this.envTarget = null;
   }
 
+  // Compiles the sky's shaders on the browser's own threads, before the first world needs them.
+  prepare(camera) {
+    const r = this.renderer;
+    if (!r.compileAsync) return Promise.resolve();
+    return Promise.all([r.compileAsync(this.skyNoiseScene, camera), r.compileAsync(this.envScene, camera)]).catch(() => {});
+  }
+
   setTheme(theme) {
     this.theme = theme;
     const s = theme.sky, u = this.skyUniforms;
@@ -329,9 +364,13 @@ export class Environment {
     if (theme.island.show) {
       const g = this.island.geometry, p = g.attributes.position, n = g.attributes.normal, c = g.attributes.color;
       const top = new THREE.Color(theme.island.top), side = new THREE.Color(theme.island.side), deep = new THREE.Color(theme.island.deep), tmp = new THREE.Color();
+      if (!this.islandShade) {          // the same in every world, so worked out once
+        this.islandShade = new Float32Array(p.count);
+        for (let i = 0; i < p.count; i++) this.islandShade[i] = 0.55 + 0.9 * this.noise.fbm3(p.getX(i) * 0.7, p.getY(i) * 0.7, p.getZ(i) * 0.7, 3);
+      }
       for (let i = 0; i < p.count; i++) {
         const y = p.getY(i), up = n.getY(i);
-        const v = 0.55 + 0.9 * this.noise.fbm3(p.getX(i) * 0.7, y * 0.7, p.getZ(i) * 0.7, 3);
+        const v = this.islandShade[i];
         if (up > 0.8 && y > -1.6) tmp.copy(top);
         else tmp.copy(side).lerp(deep, THREE.MathUtils.smoothstep(-y, 1.5, 7));
         tmp.multiplyScalar(v);
@@ -351,12 +390,22 @@ export class Environment {
     const m = theme.motes, mu = this.moteUniforms;
     mu.uColor.value.setHex(m.color); mu.uSize.value = m.size; mu.uRise.value = m.rise; mu.uOpacity.value = m.opacity;
 
+    this.skyNoiseCamera.update(this.renderer, this.skyNoiseScene);
     this.bakeEnvironment();
   }
 
   // Renders the sky, plus three bright cards standing in for the lamps, into a
   // prefiltered cube map so every polished surface reflects its own world.
   bakeEnvironment() {
+    // Kept per world: going back to one reuses its map.
+    this.envCache = this.envCache || new Map();
+    const cached = this.envCache.get(this.theme);
+    if (cached) {
+      this.envTarget = cached;
+      this.scene.environment = cached.texture;
+      this.scene.environmentIntensity = this.theme.env;
+      return;
+    }
     const L = this.theme.lights;
     const place = (card, [color, , at], size, boost) => {
       const v = new THREE.Vector3(...at).normalize().multiplyScalar(60);
@@ -368,11 +417,10 @@ export class Environment {
     place(this.cards[0], L.key, 34, 7);
     place(this.cards[1], L.rimA, 22, 4);
     place(this.cards[2], L.rimB, 22, 4);
-    const old = this.envTarget;
     this.envTarget = this.pmrem.fromScene(this.envScene, 0.015, 1, 200);
+    this.envCache.set(this.theme, this.envTarget);
     this.scene.environment = this.envTarget.texture;
     this.scene.environmentIntensity = this.theme.env;
-    if (old) old.dispose();
   }
 
   setShadowQuality(size) {
@@ -391,7 +439,6 @@ export class Environment {
   update(dt, camera) {
     this.time += dt;
     const t = this.time;
-    this.skyUniforms.uTime.value = t;
     this.starUniforms.uTime.value = t;
     this.moteUniforms.uTime.value = t;
     this.gridUniforms.uTime.value = t;

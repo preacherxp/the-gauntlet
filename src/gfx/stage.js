@@ -10,12 +10,30 @@ import { ease } from './tween.js';
 import { YOU as WHITE, KNIGHT } from '../rogue/rules.js';
 import { pixelate } from './pixelui.js';
 
+// `glass`: real refraction for the ice pieces, which draws the scene twice.
 export const QUALITY = {
-  low: { label: 'Low', pixelRatio: 1, bloom: false, shadows: 0, msaa: 0 },
-  medium: { label: 'Medium', pixelRatio: 1.25, bloom: true, shadows: 1024, msaa: 0 },
-  high: { label: 'High', pixelRatio: 2, bloom: true, shadows: 2048, msaa: 4 },
-  ultra: { label: 'Ultra', pixelRatio: 3, bloom: true, shadows: 4096, msaa: 8 },
+  low: { label: 'Low', pixelRatio: 1, bloom: false, shadows: 0, msaa: 0, glass: false },
+  medium: { label: 'Medium', pixelRatio: 1.25, bloom: true, shadows: 1024, msaa: 2, glass: false },
+  high: { label: 'High', pixelRatio: 2, bloom: true, shadows: 2048, msaa: 4, glass: true },
+  ultra: { label: 'Ultra', pixelRatio: 3, bloom: true, shadows: 4096, msaa: 8, glass: true },
 };
+export const LEVELS = ['low', 'medium', 'high', 'ultra'];
+
+// A first guess at what the device can draw smoothly, from what its GPU calls
+// itself. A frame-time check in the loop corrects it if it guessed too high.
+export function guessQuality(renderer) {
+  const gl = renderer.getContext();
+  let name = '';
+  try {
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    name = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
+  } catch { /* unknown */ }
+  if (/swiftshader|llvmpipe|softpipe|software|microsoft basic render/i.test(name)) return 'low';
+  const discrete = /nvidia|geforce|quadro|rtx|radeon (rx|pro|vii)|radeon\(tm\) (rx|pro)|arc\(tm\) a|intel\(r\) arc a|apple m\d (pro|max|ultra)/i.test(name);
+  const touchOnly = window.matchMedia('(pointer: coarse)').matches && !window.matchMedia('(any-pointer: fine)').matches;
+  if (discrete && !touchOnly) return 'high';
+  return 'medium';
+}
 
 const TARGET = new THREE.Vector3(0, 0.2, 0);
 
@@ -186,6 +204,19 @@ export class Stage {
     return this.flyTo({ theta: this.side === WHITE ? 0 : Math.PI, phi: 0.03, radius: this.fitDistance() * 1.02 }, 0.9);
   }
 
+  // Compiles the shaders the scene now needs on the browser's own threads, and
+  // draws nothing until they are ready (at most `limit` seconds), so a frame
+  // never stalls waiting for one. The last frame stays on screen meanwhile.
+  warm(limit = 4) {
+    const token = (this.holdToken = (this.holdToken || 0) + 1);
+    this.holding = true;
+    const done = () => { if (this.holdToken === token) this.holding = false; };
+    let job;
+    try { job = this.renderer.compileAsync(this.scene, this.camera); } catch (err) { console.warn('shader warm-up failed', err); done(); return Promise.resolve(); }
+    const timeout = new Promise((r) => setTimeout(r, limit * 1000));
+    return Promise.race([job, timeout]).then(done, done);
+  }
+
   shake(amount) { if (this.shakeEnabled) this.shakeAmount = Math.max(this.shakeAmount, amount); }
 
   ndc(event) {
@@ -195,6 +226,7 @@ export class Stage {
 
   render(dt) {
     if (this.controls && !this.cameraBusy) this.controls.update(dt);
+    if (this.holding) return;
     let ox = 0, oy = 0;
     if (this.shakeAmount > 0.001) {
       ox = (Math.random() - 0.5) * this.shakeAmount; oy = (Math.random() - 0.5) * this.shakeAmount;

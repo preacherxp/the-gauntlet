@@ -9,8 +9,12 @@ const mix = (a, b, t) => a + (b - a) * t;
 const smooth = (a, b, v) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t); };
 const rgb = (hex) => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
 
+// Painting is done by generators that pause every few rows (`yield`), so a texture can be painted
+// a slice at a time in idle moments, or straight through when it is needed now.
+const ROWS = 16;
+
 // paint(u, v, out) fills out[0..2] with 0-255 colour and may set out[3] (height 0-1).
-function paintCanvas(size, paint) {
+function* paintCanvas(size, paint) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
@@ -25,6 +29,7 @@ function paintCanvas(size, paint) {
       img.data[i * 4] = out[0]; img.data[i * 4 + 1] = out[1]; img.data[i * 4 + 2] = out[2]; img.data[i * 4 + 3] = 255;
       height[i++] = out[3];
     }
+    if (y % ROWS === ROWS - 1) yield;
   }
   ctx.putImageData(img, 0, 0);
   return { canvas, height, size };
@@ -38,7 +43,7 @@ function texture(canvas, srgb = true) {
   return t;
 }
 
-function normalFromHeight({ height, size }, strength = 2) {
+function* normalFromHeight({ height, size }, strength = 2) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
@@ -55,15 +60,16 @@ function normalFromHeight({ height, size }, strength = 2) {
       img.data[i + 2] = (1 / len * 0.5 + 0.5) * 255;
       img.data[i + 3] = 255;
     }
+    if (y % (ROWS * 8) === ROWS * 8 - 1) yield;
   }
   ctx.putImageData(img, 0, 0);
   return texture(canvas, false);
 }
 
 // ---------------------------------------------------------------------- stone
-function marble({ seed, base, vein, vein2 = vein, cloud = 0.1, veins = 1, size = 512 }) {
+function* marble({ seed, base, vein, vein2 = vein, cloud = 0.1, veins = 1, size = 512 }) {
   const N = makeNoise(seed), A = rgb(base), B = rgb(vein), C = rgb(vein2);
-  const p = paintCanvas(size, (u, v, out) => {
+  const p = yield* paintCanvas(size, (u, v, out) => {
     const warp = N.fbm2(u * 4, v * 4, 5, 4);
     const warp2 = N.fbm2(u * 8 + 3.3, v * 8 + 1.7, 4, 8);
     const m1 = Math.abs(Math.sin(Math.PI * (u * 3 + v * 2 + warp * 3.2)));
@@ -80,9 +86,9 @@ function marble({ seed, base, vein, vein2 = vein, cloud = 0.1, veins = 1, size =
   return { map: texture(p.canvas) };
 }
 
-function wood({ seed, light, dark, rings = 7, size = 512 }) {
+function* wood({ seed, light, dark, rings = 7, size = 512 }) {
   const N = makeNoise(seed), A = rgb(light), B = rgb(dark);
-  const p = paintCanvas(size, (u, v, out) => {
+  const p = yield* paintCanvas(size, (u, v, out) => {
     const warp = N.fbm2(u * 2, v * 6, 4, 2, 6);
     const r = 0.5 + 0.5 * Math.sin(2 * Math.PI * (v * rings + warp * 1.6));
     const grain = N.n2(u * 6, v * 180, 6, 180);
@@ -92,12 +98,12 @@ function wood({ seed, light, dark, rings = 7, size = 512 }) {
     for (let k = 0; k < 3; k++) out[k] = mix(A[k], B[k], t) * shade;
     out[3] = grain * 0.6 + pores * 0.4;
   });
-  return { map: texture(p.canvas), normalMap: normalFromHeight(p, 0.6) };
+  return { map: texture(p.canvas), normalMap: yield* normalFromHeight(p, 0.6) };
 }
 
-function basalt({ seed, base, tint, size = 512 }) {
+function* basalt({ seed, base, tint, size = 512 }) {
   const N = makeNoise(seed), A = rgb(base), B = rgb(tint);
-  const p = paintCanvas(size, (u, v, out) => {
+  const p = yield* paintCanvas(size, (u, v, out) => {
     const n = N.fbm2(u * 6, v * 6, 5, 6);
     const speck = N.n2(u * 96, v * 96, 96);
     const pit = Math.pow(N.fbm2(u * 16 + 5, v * 16 + 2, 3, 16), 3);
@@ -105,18 +111,18 @@ function basalt({ seed, base, tint, size = 512 }) {
     for (let k = 0; k < 3; k++) out[k] = mix(A[k], B[k], t) * (0.85 + speck * 0.3) * (1 - pit * 0.6);
     out[3] = n * 0.7 + speck * 0.15 - pit * 0.6;
   });
-  return { map: texture(p.canvas), normalMap: normalFromHeight(p, 2.5) };
+  return { map: texture(p.canvas), normalMap: yield* normalFromHeight(p, 2.5) };
 }
 
 // Glowing cracks: a dark colour map plus an emissive map to pair with it.
-function lava({ seed, rock, size = 512 }) {
+function* lava({ seed, rock, size = 512 }) {
   const N = makeNoise(seed), A = rgb(rock);
   const glow = document.createElement('canvas');
   glow.width = glow.height = size;
   const gctx = glow.getContext('2d');
   const gimg = gctx.createImageData(size, size);
   let i = 0;
-  const p = paintCanvas(size, (u, v, out) => {
+  const p = yield* paintCanvas(size, (u, v, out) => {
     const warp = N.fbm2(u * 4 + 7, v * 4 + 2, 4, 4);
     const a = N.fbm2(u * 5 + warp * 1.2, v * 5 + warp * 1.2, 4, 5);
     const b = N.fbm2(u * 5, v * 5, 4, 5);
@@ -133,12 +139,12 @@ function lava({ seed, rock, size = 512 }) {
     i++;
   });
   gctx.putImageData(gimg, 0, 0);
-  return { map: texture(p.canvas), emissiveMap: texture(glow), normalMap: normalFromHeight(p, 2.5) };
+  return { map: texture(p.canvas), emissiveMap: texture(glow), normalMap: yield* normalFromHeight(p, 2.5) };
 }
 
-function ice({ seed, base, frost, size = 512 }) {
+function* ice({ seed, base, frost, size = 512 }) {
   const N = makeNoise(seed), A = rgb(base), B = rgb(frost);
-  const p = paintCanvas(size, (u, v, out) => {
+  const p = yield* paintCanvas(size, (u, v, out) => {
     const warp = N.fbm2(u * 3, v * 3, 4, 3);
     const ridge = 1 - Math.abs(2 * N.fbm2(u * 6 + warp, v * 6 - warp, 4, 6) - 1);
     const b = 1 - Math.abs(2 * N.fbm2(u * 6, v * 6, 4, 6) - 1);
@@ -148,11 +154,11 @@ function ice({ seed, base, frost, size = 512 }) {
     for (let k = 0; k < 3; k++) out[k] = mix(A[k], B[k], t);
     out[3] = cloud * 0.4 + crack;
   });
-  return { map: texture(p.canvas), normalMap: normalFromHeight(p, 1.2) };
+  return { map: texture(p.canvas), normalMap: yield* normalFromHeight(p, 1.2) };
 }
 
 // ----------------------------------------------------------------- neon tiles
-function neonTile({ seed, glow, bg, fill, size = 512 }) {
+function* neonTile({ seed, glow, bg, fill, size = 512 }) {
   const N = makeNoise(seed);
   const mk = () => { const c = document.createElement('canvas'); c.width = c.height = size; return c; };
   const base = mk(), em = mk();
@@ -189,14 +195,44 @@ function neonTile({ seed, glow, bg, fill, size = 512 }) {
 
 // --------------------------------------------------------------------- library
 // Textures are painted the first time a theme asks for them, then kept.
+// `prefetch` paints the ones a later world will want in idle moments, a few rows at a time; `get`
+// finishes any that are half done.
 export class TextureLibrary {
-  constructor() { this.cache = new Map(); }
+  constructor() { this.cache = new Map(); this.jobs = new Map(); this.queue = []; this.idle = false; }
 
   get(name) {
-    if (!this.cache.has(name)) this.cache.set(name, RECIPES[name]());
+    if (!this.cache.has(name)) {
+      const job = this.jobs.get(name) || RECIPES[name]();
+      this.jobs.delete(name);
+      let r = job.next();
+      while (!r.done) r = job.next();
+      this.cache.set(name, r.value);
+    }
     return this.cache.get(name);
   }
 
+  prefetch(names) {
+    for (const n of names) if (RECIPES[n] && !this.cache.has(n) && !this.queue.includes(n)) this.queue.push(n);
+    this.schedule();
+  }
+
+  schedule() {
+    if (this.idle || !this.queue.length) return;
+    this.idle = true;
+    const later = window.requestIdleCallback ? (fn) => requestIdleCallback(fn, { timeout: 500 }) : (fn) => setTimeout(() => fn({ timeRemaining: () => 8 }), 50);
+    later((deadline) => {
+      this.idle = false;
+      const until = performance.now() + Math.min(12, Math.max(4, deadline.timeRemaining()));
+      while (this.queue.length && performance.now() < until) {
+        const name = this.queue[0];
+        if (this.cache.has(name)) { this.queue.shift(); continue; }
+        if (!this.jobs.has(name)) this.jobs.set(name, RECIPES[name]());
+        const r = this.jobs.get(name).next();
+        if (r.done) { this.cache.set(name, r.value); this.jobs.delete(name); this.queue.shift(); }
+      }
+      this.schedule();
+    });
+  }
 }
 
 const RECIPES = {

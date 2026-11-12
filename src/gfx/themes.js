@@ -51,6 +51,7 @@ export const THEMES = {
     grid: false, motes: { color: 0xcdb8ff, size: 0.09, rise: 0.12, opacity: 0.8 },
     sparks: { white: [0xfff3d0, 0xffc45e, 0xffffff], black: [0xb08cff, 0x6a3cff, 0xffc45e] },
     tileUV: 'random',
+    textures: ['marbleWhite', 'marbleBlack', 'marbleCream', 'marbleGreen', 'slate'],   // painted in idle moments before this world is needed
     music: { root: 50, tempo: 62, chords: [[0, 3, 7, 10], [-4, 0, 3, 7], [-7, -3, 0, 5], [-2, 2, 5, 9]], scale: [0, 2, 3, 5, 7, 8, 10], pad: 'sawtooth', pluck: 'triangle', density: 0.3, drive: false },
     build(tex) {
       const w = tex.get('marbleWhite'), b = tex.get('marbleBlack'), cream = tex.get('marbleCream'), green = tex.get('marbleGreen');
@@ -86,6 +87,7 @@ export const THEMES = {
     grid: true, motes: { color: 0x7af0ff, size: 0.07, rise: 0.5, opacity: 0.7 },
     sparks: { white: [0x25e6ff, 0xbdf8ff, 0xffffff], black: [0xff2fd0, 0xff9ae8, 0xffffff] },
     tileUV: 'full',
+    textures: ['neonCyan', 'neonMagenta'],
     music: { root: 45, tempo: 96, chords: [[0, 3, 7, 12], [-4, 0, 3, 8], [-9, -5, -2, 3], [-2, 2, 5, 10]], scale: [0, 2, 3, 5, 7, 8, 10], pad: 'sawtooth', pluck: 'sawtooth', density: 0.75, drive: true },
     build(tex) {
       const c = tex.get('neonCyan'), m = tex.get('neonMagenta');
@@ -122,13 +124,20 @@ export const THEMES = {
     grid: false, motes: { color: 0xff8a3c, size: 0.1, rise: 0.9, opacity: 0.9 },
     sparks: { white: [0xbfe6ff, 0xffffff, 0x5ab8ff], black: [0xff5a1a, 0xffc04a, 0xff2a00] },
     tileUV: 'random',
+    textures: ['ice', 'frost', 'lava', 'basalt'],
     music: { root: 40, tempo: 54, chords: [[0, 7, 12, 15], [1, 8, 13, 17], [0, 7, 12, 15], [-2, 5, 10, 14]], scale: [0, 1, 3, 5, 7, 8, 10], pad: 'sawtooth', pluck: 'sine', density: 0.22, drive: false },
-    build(tex) {
+    build(tex, { glass = true } = {}) {
       const iceT = tex.get('ice'), frost = tex.get('frost'), lavaT = tex.get('lava'), bas = tex.get('basalt');
-      const iceBody = rim(phys({
-        color: 0xd6efff, roughness: 0.07, transmission: 0.92, thickness: 0.7, ior: 1.31, attenuationColor: 0x6fc0ff, attenuationDistance: 0.9,
-        normalMap: turned(iceT.normalMap, 2, 2), normalScale: new THREE.Vector2(0.25, 0.25), clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.4,
-      }), 0x9fdcff, 3, 0.4);
+      // Real refraction draws the whole scene a second time, so below High the ice is only see-through.
+      const iceBody = glass
+        ? rim(phys({
+          color: 0xd6efff, roughness: 0.07, transmission: 0.92, thickness: 0.7, ior: 1.31, attenuationColor: 0x6fc0ff, attenuationDistance: 0.9,
+          normalMap: turned(iceT.normalMap, 2, 2), normalScale: new THREE.Vector2(0.25, 0.25), clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.4,
+        }), 0x9fdcff, 3, 0.4)
+        : rim(phys({
+          color: 0x3f8fd0, roughness: 0.07, transparent: true, opacity: 0.86, emissive: 0x0f3f78, emissiveIntensity: 0.6,
+          normalMap: turned(iceT.normalMap, 2, 2), normalScale: new THREE.Vector2(0.25, 0.25), clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.5,
+        }), 0xbfe8ff, 2.4, 1.1);
       const magma = std({
         map: turned(lavaT.map, 2, 2), emissiveMap: turned(lavaT.emissiveMap, 2, 2), emissive: 0xffffff, emissiveIntensity: 2.6,
         normalMap: turned(lavaT.normalMap, 2, 2), roughness: 0.75, metalness: 0.1,
@@ -165,6 +174,7 @@ export const THEMES = {
     grid: false, motes: { color: 0xffe9a0, size: 0.08, rise: 0.08, opacity: 0.9 },
     sparks: { white: [0xfff2c8, 0xffd27a, 0xffffff], black: [0xffa55c, 0xff7a3c, 0xffe08a] },
     tileUV: 'random',
+    textures: ['maple', 'walnut', 'mahogany', 'slate'],
     music: { root: 55, tempo: 70, chords: [[0, 4, 7, 11], [-3, 0, 4, 7], [-7, -3, 0, 4], [-5, -1, 2, 7]], scale: [0, 2, 4, 7, 9], pad: 'triangle', pluck: 'triangle', density: 0.4, drive: false },
     build(tex) {
       const maple = tex.get('maple'), walnut = tex.get('walnut'), mah = tex.get('mahogany');

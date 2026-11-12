@@ -47,6 +47,13 @@ Keys: `1` to `5` play a card, `Esc` cancels, `Enter` starts the fight, `M` mutes
 - **Menu** in the top corner holds the map, army, deck, settings and sound.
 - It works upright and on its side; the board is framed in the space the interface leaves, and re-framed when the phone turns.
 
+## Graphics settings
+
+- **Auto**, the default, picks a level from what the graphics chip calls itself: High for a separate graphics card, Medium otherwise, Low for software rendering. While you play it watches how long frames take, and steps down a level if they run slow. Choosing Auto again in the settings guesses afresh.
+- **Low** draws straight to the screen: no glow, no shadows. **Medium** adds glow, shadows and 2× antialiasing. **High** and **Ultra** draw at a higher resolution on sharp screens, with sharper shadows, more antialiasing, and real refraction in the ice pieces.
+- **Frame rate** is capped at 60 by default (30 saves battery; Max follows the screen). Behind a full-screen menu the world is drawn at 20 frames a second.
+- A new world's shaders are compiled in the background before its first frame, and its textures are painted in idle moments while the title shows.
+
 ## How the assets are made
 
 | What | How | Where |
@@ -55,7 +62,7 @@ Keys: `1` to `5` play a card, `Esc` cancels, `Enter` starts the fight, `M` mutes
 | What each temper wears | Built from primitives on the pawn's head and body | `src/rogue/looks.js` |
 | How each temper moves, attacks and dies | Tweened by hand, with particles and sounds at the right moments | `src/rogue/motion.js` |
 | Marble, wood, basalt, lava, ice, neon tiles | Painted pixel by pixel from seeded, tiling noise | `src/gfx/textures.js` |
-| Sky, stars, floating island, rocks, dust | Shaders and displaced geometry | `src/gfx/environment.js` |
+| Sky, stars, floating island, rocks, dust | Shaders and displaced geometry. The sky's nebula and clouds are rendered into a cube map once per world, not every frame | `src/gfx/environment.js` |
 | Reflections | A cube map baked from the sky shader itself | `src/gfx/environment.js` |
 | Portraits of pieces | Rendered from the 3D pieces in the current world | `src/gfx/stage.js`, `src/rogue/looks.js` |
 | The pixel font | Hand-drawn 5×7 glyphs, assembled into a TrueType file in memory and loaded like a web font | `src/gfx/pixelfont.js` |
@@ -95,10 +102,10 @@ How pieces keep out of each other: a capture plays out up to the point where the
 
 ## Publishing
 
-`npm run build` writes the playable site to `dist/`: the page, its code, and the parts of three.js it imports. On GitHub, `.github/workflows/pages.yml` does the same on every push to `main` and publishes the result to GitHub Pages.
+`npm run build` writes the playable site to `dist/`: the page, its stylesheet, and the game with the parts of three.js it uses, bundled and minified by esbuild into one file (about 830 KB, 230 KB gzipped, where the page in the repository loads 2.6 MB in 46 files). On GitHub, `.github/workflows/pages.yml` does the same on every push to `main` and publishes the result to GitHub Pages.
 
 How hard the game is has only been measured with that bot, which plays its cards at random. It finishes runs and nothing crashes; that says nothing about whether the difficulty is right for a person.
 
 ## Licences
 
-The game's code uses [three.js](https://threejs.org) 0.187.0 (MIT), and `puppeteer-core` and `@playwright/test` (both Apache-2.0) only for the screenshot tool and the device checks.
+The game's code uses [three.js](https://threejs.org) 0.187.0 (MIT), and `puppeteer-core` and `@playwright/test` (both Apache-2.0) only for the screenshot tool and the device checks, and `esbuild` (MIT) only to build the published site.

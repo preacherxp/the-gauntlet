@@ -35,7 +35,7 @@ export const fullName = (p) => (PERSONAS[p.persona] && PERSONAS[p.persona].title
 
 export class RogueUI {
   constructor(root, on) {
-    this.root = root; this.on = on; this.icons = {};
+    this.root = root; this.on = on; this.iconSource = null; this.portraits = null;
     root.replaceChildren(
       h('header', { id: 'r-top' },
         h('div', { class: 'brand' }, h('span', { class: 'mark' }), h('span', { text: 'THE GAUNTLET' })),
@@ -64,7 +64,9 @@ export class RogueUI {
   // Small screens: phone layout, where the cards are wide rows showing their whole description.
   get compact() { return window.matchMedia('(max-width: 820px), (max-height: 600px)').matches; }
 
-  setIcons(icons) { this.icons = icons; }
+  // The piece icons, or a function that draws them the first time they are wanted.
+  setIcons(icons) { this.iconSource = icons; }
+  get icons() { const s = this.iconSource; return (typeof s === 'function' ? s() : s) || {}; }
   setMuted(m) { this.muteBtn.textContent = m ? 'Sound off' : 'Sound on'; }
   icon(type, side, cls = '') { return h('img', { class: 'pc ' + cls, src: this.icons[type | (side << 3)] || '', alt: PIECE_NAMES[type] }); }
 
@@ -202,7 +204,7 @@ export class RogueUI {
 
   person(p, side = YOU, extra = null) {
     const per = PERSONAS[p.persona];
-    const portrait = p.type === PAWN && this.personaIcons && this.personaIcons[p.persona];
+    const portrait = p.type === PAWN && this.portraits && this.portraits()[p.persona];
     return h('div', { class: 'person' + (p.wounded ? ' hurt' : '') },
       portrait ? h('img', { class: 'pc', src: portrait, alt: 'Pawn' }) : this.icon(p.type, side),
       h('div', {},
