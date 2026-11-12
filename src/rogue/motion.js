@@ -3,7 +3,9 @@
 //
 //   move(a, pc, from, to, { dir, dist })          ends standing on `to`
 //   attack(a, pc, from, to, strike, { dir, dist }) calls strike() at the blow, ends on `to`
-//   die(a, pc, away)                               `away` is the way the blow came from; return 'keep' to leave the body
+//   die(a, pc, away, room)                         `away`: the way to fall, chosen by the arena where there is space;
+//                                                  `room`: how far from its square it may reach that way before it
+//                                                  meets another piece. Return 'keep' to leave the body.
 //
 // `a` is the arena: a.tweens, a.fx, a.sfx(name), a.beat(kind, data), a.dust(pos, n).
 // Animations may move pc.group and pc.model freely; the arena settles the piece afterwards.
@@ -45,6 +47,13 @@ function upright(pc) {
 // Squash and stretch that keeps the volume.
 function squash(pc, sy) { const sx = 1 / Math.sqrt(Math.max(0.05, sy)); pc.model.scale.set(sx, sy, sx); }
 const shrink = (pc, k) => pc.model.scale.setScalar(Math.max(0.001, 1 - k));
+// The furthest a falling piece may tip, so its head stays within `room` of its foot.
+function tipTo(pc, room, full) {
+  const tall = (pc.top || pc.height) + 0.05;
+  return room === undefined || room >= tall ? full : Math.min(full, Math.asin(Math.max(0, room) / tall));
+}
+// How far a piece may travel from its square, its own width included.
+const roomFor = (pc, room, want) => (room === undefined ? want : Math.max(0, Math.min(want, room - (pc.reach || pc.radius))));
 
 export const MOTION = {
   // ------------------------------------------------------------- the Bold
@@ -70,12 +79,13 @@ export const MOTION = {
       await run(a, 0.24, (k) => { pc.model.position.y = sin(PI * k) * 0.16; lean(pc, dir, 0.5 * (1 - k)); squash(pc, 1.08 - 0.08 * k); }, ease.outQuad);
     },
     // Falls like a tree, flat on its face, and sinks away.
-    async die(a, pc, away) {
-      const base = at(pc), end = base.clone().addScaledVector(away, 0.28);
+    async die(a, pc, away, room) {
+      const push = room === undefined ? 0.28 : Math.min(0.28, room * 0.2);
+      const base = at(pc), end = base.clone().addScaledVector(away, push), fall = tipTo(pc, room === undefined ? room : room - push, 1.52);
       a.sfx('creak');
-      await run(a, 0.7, (k) => { tip(pc, away, k * 1.52); slide(pc, base, end, k); }, ease.inQuad);
+      await run(a, 0.7, (k) => { tip(pc, away, k * fall); slide(pc, base, end, k); }, ease.inQuad);
       a.dust(end.clone().addScaledVector(away, 0.4), 16); a.sfx('thud'); a.beat('shake', 0.12);
-      await run(a, 0.16, (k) => tip(pc, away, 1.52 - sin(PI * k) * 0.14));
+      await run(a, 0.16, (k) => tip(pc, away, fall * (1 - sin(PI * k) * 0.09)));
       await run(a, 0.5, (k) => { pc.group.position.y = -0.45 * k; shrink(pc, k * 0.5); }, ease.inQuad, 0.3);
     },
   },
@@ -103,10 +113,11 @@ export const MOTION = {
       await run(a, 0.35, (k) => { pc.group.rotation.set(0, 0, sin(k * 50) * 0.06 * (1 - k)); squash(pc, 1 - 0.06 * sin(PI * k)); });
     },
     // Wobbles, faints over backwards, and fades.
-    async die(a, pc, away) {
+    async die(a, pc, away, room) {
       a.sfx('squeak');
       await run(a, 0.3, (k) => { pc.group.rotation.z = sin(k * 30) * 0.12; });
-      await run(a, 0.65, (k) => tip(pc, away, k * 1.5), ease.outBounce);
+      const fall = tipTo(pc, room, 1.5);
+      await run(a, 0.65, (k) => tip(pc, away, k * fall), ease.outBounce);
       a.sfx('thud'); a.dust(at(pc), 8);
       await run(a, 0.35, (k) => shrink(pc, k), ease.inQuad, 0.35);
     },
@@ -137,11 +148,11 @@ export const MOTION = {
       }
     },
     // Ricochets about, spinning, and pops.
-    async die(a, pc, away) {
-      const base = at(pc);
+    async die(a, pc, away, room) {
+      const base = at(pc), far = roomFor(pc, room, 0.6), side = perp(away);
       let spin = 0;
       for (let i = 0; i < 3; i++) {
-        const from = pc.group.position.clone(), to = base.clone().addScaledVector(away, 0.2 * (i + 1)).add(new THREE.Vector3((Math.random() - 0.5) * 0.5, 0, (Math.random() - 0.5) * 0.5));
+        const from = pc.group.position.clone(), to = base.clone().addScaledVector(away, far * (i + 1) / 3).addScaledVector(side, (Math.random() - 0.5) * 0.16);
         a.sfx('boing');
         await run(a, 0.2 - i * 0.03, (k) => { slide(pc, from, to, k); pc.model.position.y = sin(PI * k) * (0.4 - i * 0.1); pc.group.rotation.y = spin + k * PI; });
         spin += PI;
@@ -305,11 +316,11 @@ export const MOTION = {
       a.sfx('thud');
       a.fx.burst(at(pc, 0.4), PAPER, { count: 40, speed: 2, up: 1.6, size: 0.13, life: 1.1, gravity: 0.6 });
     },
-    // Keels over sideways in a flutter of loose pages.
-    async die(a, pc, away) {
-      const fall = perp(away);
+    // Keels over in a flutter of loose pages.
+    async die(a, pc, away, room) {
+      const fall = tipTo(pc, room, 1.5);
       a.sfx('pages');
-      await run(a, 0.55, (k) => tip(pc, fall, k * 1.5), ease.inQuad);
+      await run(a, 0.55, (k) => tip(pc, away, k * fall), ease.inQuad);
       a.sfx('thud');
       for (let i = 0; i < 3; i++) a.fx.burst(at(pc, 0.3 + i * 0.2), PAPER, { count: 18, speed: 1.2, up: 1.2, size: 0.15, life: 1.6, gravity: -0.25 });
       await run(a, 0.45, (k) => shrink(pc, k), ease.inQuad, 0.3);
@@ -342,7 +353,7 @@ export const MOTION = {
     // Swells with fury until it explodes.
     async die(a, pc) {
       a.sfx('growl');
-      await run(a, 0.38, (k) => { pc.model.scale.setScalar(1 + 0.35 * k); pc.group.rotation.set(sin(k * 100) * 0.06 * k, 0, sin(k * 120) * 0.06 * k); a.fx.trail(at(pc, 0.3), FIRE, 2); }, ease.inQuad);
+      await run(a, 0.38, (k) => { pc.model.scale.setScalar(1 + 0.15 * k); pc.group.rotation.set(sin(k * 100) * 0.06 * k, 0, sin(k * 120) * 0.06 * k); a.fx.trail(at(pc, 0.3), FIRE, 2); }, ease.inQuad);
       a.sfx('boom'); a.beat('shake', 0.3);
       a.fx.shatter(pc.group.position.clone(), pc.height, pc.body.material, 16);
       a.fx.burst(at(pc, 0.4), [...FIRE, 0xffe08a], { count: 150, speed: 4.2, up: 2.4, size: 0.2, life: 0.9, gravity: 2, sphere: true });
@@ -371,15 +382,15 @@ export const MOTION = {
       a.fx.burst(at(pc, 0.6), [C.lucky, 0xb8ffb0, 0xffd24a], { count: 40, speed: 2, up: 2, size: 0.11, life: 0.8 });
       await run(a, 0.32, (k) => { pc.group.rotation.set(0, sin(k * PI * 3) * 0.4, 0); });
     },
-    // Is knocked clean off the board, tumbling.
-    async die(a, pc, away) {
-      const base = at(pc), dest = base.clone().addScaledVector(away, 3.2);
+    // Is knocked clean off the board, tumbling up and away until it twinkles out.
+    async die(a, pc, away, room) {
+      const base = at(pc), dest = base.clone().addScaledVector(away, roomFor(pc, room, 1.4));
       let twinkled = false;
       a.sfx('boing');
       await run(a, 1.0, (k) => {
-        slide(pc, base, dest, k);
-        roll(pc, away, k * PI * 5, sin(PI * Math.min(1, k * 1.25)) * 1.6 - Math.max(0, k - 0.8) * 8);
-        pc.model.scale.setScalar(Math.max(0.001, 1 - Math.max(0, k - 0.6) * 2.5));
+        slide(pc, base, dest, ease.outQuad(k));
+        roll(pc, away, k * PI * 5, 2.6 * (1 - (1 - k) * (1 - k)));
+        pc.model.scale.setScalar(Math.max(0.001, 1 - Math.max(0, k - 0.5) * 2));
         if (!twinkled && k > 0.4) { twinkled = true; a.sfx('sparkle'); a.fx.burst(pc.group.position.clone(), [0xffffff, 0xffd24a], { count: 24, speed: 2, up: 0, size: 0.12, life: 0.5, gravity: 0, sphere: true }); }
       });
     },
@@ -445,11 +456,13 @@ export const MOTION = {
     // Squashed flat as a pancake, then gone with a pop.
     async die(a, pc) {
       a.sfx('squash');
-      await run(a, 0.18, (k) => pc.model.scale.set(1 + 0.75 * k, Math.max(0.08, 1 - 0.92 * k), 1 + 0.75 * k), ease.outQuad);
+      // flattened no wider than its own square
+      const wide = Math.min(1.75, 0.46 / (pc.reach || pc.radius));
+      await run(a, 0.18, (k) => pc.model.scale.set(1 + (wide - 1) * k, Math.max(0.08, 1 - 0.92 * k), 1 + (wide - 1) * k), ease.outQuad);
       await wait(a, 0.4);
       a.sfx('pop');
       a.fx.burst(at(pc, 0.05), [C.loud, 0xffffff, 0xffa0f0], { count: 60, speed: 2.6, up: 1, size: 0.12, life: 0.6 });
-      await run(a, 0.16, (k) => pc.model.scale.set(Math.max(0.001, 1.75 * (1 - k)), 0.08, Math.max(0.001, 1.75 * (1 - k))), ease.inQuad);
+      await run(a, 0.16, (k) => pc.model.scale.set(Math.max(0.001, wide * (1 - k)), 0.08, Math.max(0.001, wide * (1 - k))), ease.inQuad);
     },
   },
 
@@ -468,12 +481,12 @@ export const MOTION = {
       a.sfx('slam'); a.fx.ring(pc.group.position, 0xffd27a, 2, 0.45);
     },
     // Topples slowly, and stays where it fell.
-    async die(a, pc, away) {
-      const side = perp(away);
+    async die(a, pc, away, room) {
+      const fall = tipTo(pc, room, 1.5);
       a.sfx('creak');
-      await run(a, 1.1, (k) => tip(pc, side, k * 1.5), ease.outBounce);
+      await run(a, 1.1, (k) => tip(pc, away, k * fall), ease.outBounce);
       a.sfx('thud');
-      a.fx.burst(at(pc, 0.3).addScaledVector(side, 0.6), [0xffd27a, 0xffffff], { count: 50, speed: 1.6, up: 2, size: 0.12, life: 1 });
+      a.fx.burst(at(pc, 0.3).addScaledVector(away, 0.6), [0xffd27a, 0xffffff], { count: 50, speed: 1.6, up: 2, size: 0.12, life: 1 });
       return 'keep';
     },
   },

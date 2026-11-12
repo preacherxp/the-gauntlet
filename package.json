@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node tools/serve.mjs",
-    "test": "node tests/rogue.test.mjs && node tests/motion.test.mjs",
+    "test": "node tests/rogue.test.mjs && node tests/motion.test.mjs && node tests/clip.test.mjs",
     "build": "node tools/build-site.mjs dist",
     "shots": "node tools/shoot.mjs",
     "test:e2e": "playwright test"

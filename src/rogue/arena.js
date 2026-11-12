@@ -190,6 +190,7 @@ export class Arena {
     const pc = createPiece(p.type, p.side, this.mats);
     Object.assign(pc, { id: p.id, idx, side: p.side, lift: 0, busy: false, shield: null, ice: null, aura: null });
     dressPersona(pc, p.perk, p.name);
+    this.measure(pc);
     pc.hit.userData.piece = pc;
     this.world(idx, pc.group.position);
     this.root.add(pc.group);
@@ -201,6 +202,92 @@ export class Arena {
   }
 
   pieceAt(idx) { for (const pc of this.pieces.values()) if (pc.idx === idx) return pc; return null; }
+
+  // ------------------------------------------------------ room to move in
+  // So that no piece passes through another, each knows how far it reaches
+  // from its axis (`reach`, its temper's headgear included) and how tall it
+  // stands (`top`). Measured once from its meshes, in the model's own frame.
+  measure(pc) {
+    pc.group.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(pc.model.matrixWorld).invert(), rel = new THREE.Matrix4(), v = new THREE.Vector3();
+    let reach = pc.radius, top = pc.height;
+    const meshes = [pc.body, pc.trim];
+    if (pc.look) pc.look.traverse((o) => { if (o.isMesh) meshes.push(o); });
+    for (const m of meshes) {
+      rel.multiplyMatrices(inv, m.matrixWorld);
+      const p = m.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i).applyMatrix4(rel);
+        reach = Math.max(reach, Math.hypot(v.x, v.z)); top = Math.max(top, v.y);
+      }
+    }
+    pc.reach = reach; pc.top = top;
+  }
+
+  // The pieces standing near the straight line from `from` to `to` that `pc` would hit going along the
+  // board: for each, the stretch of the way (0 to 1) where they overlap and how high `pc` must be there.
+  obstacles(pc, from, to, ignore = []) {
+    const d = new THREE.Vector3(to.x - from.x, 0, to.z - from.z), len = d.length(), out = [];
+    if (len < 1e-3) return out;
+    d.divideScalar(len);
+    for (const q of this.pieces.values()) {
+      if (q === pc || ignore.includes(q)) continue;
+      const rx = q.group.position.x - from.x, rz = q.group.position.z - from.z;
+      const along = rx * d.x + rz * d.z, lat = Math.abs(rx * d.z - rz * d.x);
+      // the footprints decide whether they meet: a piece may pass between two neighbours on a diagonal
+      const R = pc.radius + q.radius + 0.05;
+      if (lat >= R) continue;
+      const half = Math.sqrt(R * R - lat * lat);
+      if (along + half <= 0 || along - half >= len) continue;
+      out.push({ k0: (along - half) / len, k1: (along + half) / len, h: q.top + 0.12 });
+    }
+    return out;
+  }
+
+  // How high an arc of sin(πk) must peak to clear `obs`; Infinity if one stands at either end.
+  arcFor(obs) {
+    let hop = 0;
+    for (const o of obs) {
+      if (o.k0 <= 0.02 || o.k1 >= 0.98) return Infinity;
+      hop = Math.max(hop, o.h / Math.min(Math.sin(Math.PI * o.k0), Math.sin(Math.PI * o.k1)));
+    }
+    return hop;
+  }
+
+  // Lift a piece straight up to `height`, carry it over, and set it down: for crossing a crowd.
+  carry(pc, from, to, height, seconds = 0.5, lean = 0.12) {
+    const dir = new THREE.Vector3(to.x - from.x, 0, to.z - from.z).normalize();
+    return this.tweens.run(seconds, (k) => {
+      const up = Math.min(1, k / 0.3), across = Math.min(1, Math.max(0, (k - 0.3) / 0.4)), down = Math.max(0, (k - 0.7) / 0.3);
+      pc.group.position.lerpVectors(from, to, ease.inOutQuad(across)).setY(0);
+      pc.model.position.y = height * (ease.outQuad(up) - ease.inQuad(down));
+      const tilt = Math.sin(Math.PI * across) * lean;
+      pc.group.rotation.set(dir.z * tilt, 0, -dir.x * tilt);
+    }, ease.linear);
+  }
+
+  // Which way a dying piece should fall, and how far it may reach that way before it meets
+  // another piece. Tries the way the blow pushed it first, then turns aside, never back.
+  fallRoom(pc, away) {
+    let best = null;
+    for (const turn of [0, 0.79, -0.79, 1.57, -1.57]) {
+      const c = Math.cos(turn), s = Math.sin(turn);
+      const dir = new THREE.Vector3(away.x * c - away.z * s, 0, away.x * s + away.z * c).normalize();
+      let room = 3;
+      for (const q of this.pieces.values()) {
+        if (q === pc) continue;
+        const rx = q.group.position.x - pc.group.position.x, rz = q.group.position.z - pc.group.position.z;
+        const along = rx * dir.x + rz * dir.z, lat = Math.abs(rx * dir.z - rz * dir.x);
+        const R = q.reach + pc.radius * 0.8;
+        if (lat >= R || along <= 0) continue;
+        room = Math.min(room, along - Math.sqrt(R * R - lat * lat) - 0.06);
+      }
+      room = Math.max(0, room);
+      if (!best || room > best.room + 0.15) best = { dir, room };
+      if (room >= (pc.top || pc.height) + 0.1) break;    // room enough to fall full length
+    }
+    return best;
+  }
 
   settle(pc) {
     pc.group.rotation.set(0, 0, 0);
@@ -220,6 +307,7 @@ export class Arena {
   }
 
   // A piece leaves the board in its own way. `away` is the direction the blow travelled.
+  // Resolves to 'keep' when the body stays on the board (a fallen king).
   kill(pc, away) {
     this.pieces.delete(pc.id);
     pc.busy = true;
@@ -227,7 +315,9 @@ export class Arena {
     const kit = pc.perk && MOTION[pc.perk];
     if (!kit) { this.shatter(pc); return Promise.resolve(); }
     this.beat('death', pc);
-    return Promise.resolve(kit.die(this, pc, away.clone().normalize())).then((r) => { if (r !== 'keep') this.root.remove(pc.group); });
+    // it falls the way it was pushed if there is room, else aside, and no further than its neighbours
+    const { dir, room } = this.fallRoom(pc, away.clone().setY(0).normalize());
+    return Promise.resolve(kit.die(this, pc, dir, room)).then((r) => { if (r !== 'keep') this.root.remove(pc.group); return r; });
   }
 
   // Replace a piece's model: a pawn knighted, a pawn crowned, a turncoat.
@@ -238,6 +328,7 @@ export class Arena {
     pc.side = side;
     pc.hit.userData.piece = pc;
     dressPersona(pc, side === YOU ? pc.perk : null, pc.pname);
+    this.measure(pc);
     this.world(pc.idx, pc.group.position);
     this.root.add(pc.group);
     for (const k of ['shield', 'ice', 'aura']) { const had = !!pc[k]; pc[k] = null; if (had) this[k === 'shield' ? 'setShield' : k === 'ice' ? 'setIce' : 'setAura'](pc, true, false); }
@@ -247,7 +338,8 @@ export class Arena {
     if (on === !!pc.shield) return;
     if (on) {
       const m = new THREE.Mesh(this.bubbleGeo, this.bubbleMat[pc.side]);
-      m.scale.set(pc.radius * 1.75, pc.height * 0.62, pc.radius * 1.75);
+      const r = Math.min(pc.radius * 1.75, 0.47);           // stays inside its own square, clear of a shielded neighbour's
+      m.scale.set(r, pc.height * 0.62, r);
       m.position.y = pc.height * 0.52;
       m.renderOrder = 4;
       pc.group.add(m);
@@ -260,7 +352,8 @@ export class Arena {
     if (on === !!pc.ice) return;
     if (on) {
       const m = new THREE.Mesh(this.iceGeo, this.iceMat);
-      m.scale.set(pc.radius * 1.6, pc.height * 0.6, pc.radius * 1.6);
+      const r = Math.min(pc.radius * 1.6, 0.46);
+      m.scale.set(r, pc.height * 0.6, r);
       m.position.y = pc.height * 0.5;
       m.rotation.y = Math.random() * 3;
       m.renderOrder = 3;
@@ -328,7 +421,15 @@ export class Arena {
     const from = pc.group.position.clone().setY(0), to = this.world(e.to);
     const dist = from.distanceTo(to);
     const dir = dist > 1e-3 ? to.clone().sub(from).divideScalar(dist) : new THREE.Vector3(0, 0, pc.side === YOU ? -1 : 1);
-    const jump = pc.type === KNIGHT || e.style === 'leap';
+    // A capture plays out up to where the two first touch: the blow lands there, the victim dies on
+    // its own square, and only once it has gone does the attacker step in.
+    const gap = victim ? pc.reach + victim.reach + 0.12 : 0;
+    const stop = victim && dist > gap ? to.clone().addScaledVector(dir, -gap) : to;
+    const reach = from.distanceTo(stop);
+    // Anything standing in the way is jumped: in a high arc, or lifted clean over a crowd.
+    const obs = this.obstacles(pc, from, stop, victim ? [victim] : []);
+    const jump = pc.type === KNIGHT || e.style === 'leap' || obs.length > 0;
+    const hop = jump ? Math.max(1.0, this.arcFor(obs)) : 0;
     const kit = !jump && pc.perk ? MOTION[pc.perk] : null;
     let dying = null;
     const strike = () => {
@@ -337,21 +438,28 @@ export class Arena {
       this.beat('strike', { pc, victim });
     };
     pc.busy = true;
-    if (kit) await (victim ? kit.attack(this, pc, from, to, strike, { dir, dist }) : kit.move(this, pc, from, to, { dir, dist }));
-    else await this.plainMove(pc, from, to, dir, dist, jump, !!victim, strike, e.style);
+    if (kit) await (victim ? kit.attack(this, pc, from, stop, strike, { dir, dist: reach }) : kit.move(this, pc, from, stop, { dir, dist: reach }));
+    else if (hop > 2.4) { this.sfx('whoosh'); await this.carry(pc, from, stop, Math.max(...obs.map((o) => o.h)), 0.6); }
+    else await this.plainMove(pc, from, stop, dir, reach, jump, !!victim, strike, e.style, hop);
     strike();
+    const kept = dying ? (await dying) === 'keep' : false;
     this.settle(pc);
-    pc.group.position.copy(to);
+    pc.group.position.copy(stop);
+    if (stop !== to && !kept) {
+      // the square is clear: step into it
+      await this.tweens.run(0.2, (k) => { pc.group.position.lerpVectors(stop, to, k); pc.model.position.y = Math.sin(Math.PI * k) * 0.06; }, ease.inOutQuad);
+      pc.model.position.y = 0;
+    }
+    if (!kept) pc.group.position.copy(to);     // a fallen king keeps his square; the fight is over anyway
     pc.idx = e.to;
     this.beat('land', { pc, captured: !!victim });
     if (!kit && (victim || jump)) this.fx.burst(to, this.sparks(pc.side), { count: victim ? 24 : 10, speed: 1.6, up: 0.6, size: 0.1, life: 0.5 });
-    if (dying) await dying;
     if (e.promo) await this.transform(pc, QUEEN);
   }
 
-  plainMove(pc, from, to, dir, dist, jump, capture, strike, style) {
+  plainMove(pc, from, to, dir, dist, jump, capture, strike, style, arc = 1.0) {
     const dur = style === 'step' ? 0.2 : jump ? 0.5 : 0.2 + dist * 0.07;
-    const hop = jump ? 1.0 : 0.1 + (capture ? 0.28 : 0);
+    const hop = jump ? arc : 0.1 + (capture ? 0.28 : 0);
     const col = this.sparks(pc.side);
     if (jump) this.sfx('whoosh');
     return this.tweens.run(dur, (k) => {
@@ -370,10 +478,12 @@ export class Arena {
     const pc = this.pieces.get(e.by), target = this.pieces.get(e.id);
     if (!pc || !target) return;
     const start = pc.group.position.clone(), to = target.group.position.clone();
+    // lunge until the two all but touch, no further
+    const dist = start.distanceTo(to), most = dist > 1e-3 ? Math.max(0, Math.min(0.62, (dist - pc.reach - target.reach - 0.08) / dist)) : 0;
     let popped = false;
     pc.busy = true;
     await this.tweens.run(0.42, (k) => {
-      const reach = Math.sin(Math.PI * k) * 0.62;
+      const reach = Math.sin(Math.PI * k) * most;
       pc.group.position.lerpVectors(start, to, reach);
       pc.model.position.y = Math.sin(Math.PI * k) * 0.25;
       if (k > 0.5 && !popped) { popped = true; this.popShield(target); }
@@ -453,11 +563,13 @@ export class Arena {
       this.fx.ring(to, col[0], 1.3, 0.4);
       this.fx.burst(to.clone().setY(0.4), col, { count: 30, speed: 1.6, up: 1.5, size: 0.11, life: 0.6 });
       await this.tweens.run(0.22, (k) => pc.model.scale.setScalar(Math.max(0.02, k)), ease.outBack);
-    } else if (pc.perk && MOTION[pc.perk] && pc.type !== KNIGHT) {
-      const dist = from.distanceTo(to), dir = to.clone().sub(from).divideScalar(Math.max(dist, 1e-3));
-      await MOTION[pc.perk].move(this, pc, from.setY(0), to, { dir, dist });
     } else {
-      await this.tweens.run(0.22, (k) => { pc.group.position.lerpVectors(from, to, k); pc.model.position.y = Math.sin(Math.PI * k) * 0.18; }, ease.inOutCubic);
+      const obs = this.obstacles(pc, from.setY(0), to);
+      if (obs.length) { this.sfx('whoosh'); await this.carry(pc, from, to, Math.max(...obs.map((o) => o.h)), 0.55); }   // lifted over whoever is in the way
+      else if (pc.perk && MOTION[pc.perk] && pc.type !== KNIGHT) {
+        const dist = from.distanceTo(to), dir = to.clone().sub(from).divideScalar(Math.max(dist, 1e-3));
+        await MOTION[pc.perk].move(this, pc, from, to, { dir, dist });
+      } else await this.tweens.run(0.22, (k) => { pc.group.position.lerpVectors(from, to, k); pc.model.position.y = Math.sin(Math.PI * k) * 0.18; }, ease.inOutCubic);
     }
     this.settle(pc);
     pc.group.position.copy(to);
@@ -471,13 +583,21 @@ export class Arena {
   }
 
   // Two pieces trade squares, one arcing over the other. Also used while deploying.
+  // `b` slides along the board (lifted only if others are in its way), and `a` is carried over
+  // the top of it: up, across, and down once `b` has left.
   async exchange(a, b) {
     const pa = this.world(a.idx), pb = this.world(b.idx);
     a.busy = b.busy = true;
-    await this.tweens.run(0.34, (k) => {
-      a.group.position.lerpVectors(pa, pb, k); a.model.position.y = Math.sin(Math.PI * k) * 0.9;
-      b.group.position.lerpVectors(pb, pa, k); b.model.position.y = Math.sin(Math.PI * k) * 0.15;
-    }, ease.inOutCubic);
+    const high = (obs) => (obs.length ? Math.max(...obs.map((o) => o.h)) : 0);
+    const hb = high(this.obstacles(b, pb, pa, [a]));
+    const ha = Math.max(0.5, high(this.obstacles(a, pa, pb, [b])), hb + b.top + 0.15);
+    await Promise.all([
+      this.carry(a, pa, pb, ha, 0.5),
+      hb > 0 ? this.carry(b, pb, pa, hb, 0.5, 0) : this.tweens.run(0.5, (k) => {
+        const across = Math.min(1, Math.max(0, (k - 0.3) / 0.4));
+        b.group.position.lerpVectors(pb, pa, ease.inOutQuad(across));
+      }, ease.linear),
+    ]);
     [a.idx, b.idx] = [b.idx, a.idx];
     this.settle(a); this.settle(b);
     a.group.position.copy(pb); b.group.position.copy(pa);
@@ -486,7 +606,9 @@ export class Arena {
   async relocate(pc, idx) {
     const from = pc.group.position.clone(), to = this.world(idx);
     pc.busy = true;
-    await this.tweens.run(0.26, (k) => { pc.group.position.lerpVectors(from, to, k); pc.model.position.y = Math.sin(Math.PI * k) * 0.5; }, ease.inOutCubic);
+    const obs = this.obstacles(pc, from, to);
+    if (obs.length) await this.carry(pc, from, to, Math.max(...obs.map((o) => o.h)), 0.42);
+    else await this.tweens.run(0.26, (k) => { pc.group.position.lerpVectors(from, to, k); pc.model.position.y = Math.sin(Math.PI * k) * 0.5; }, ease.inOutCubic);
     this.settle(pc);
     pc.group.position.copy(to);
     pc.idx = idx;
